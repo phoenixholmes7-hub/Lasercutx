@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' data: blob:" />
+  <title>LaserCutX – Metal Card Designer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">LaserCut<b>X</b></div>
+    <div class="group">
+      <button id="btnNew" title="Start from a template">New…</button>
+      <button id="btnOpen" title="Open a .lcx project (Ctrl+O)">Open</button>
+      <button id="btnSave" title="Save project (Ctrl+S)">Save</button>
+    </div>
+    <div class="group">
+      <button id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
+      <button id="btnRedo" title="Redo (Ctrl+Y)">↷</button>
+    </div>
+    <div class="group seg" id="sideToggle">
+      <button data-side="front" class="active">Front</button>
+      <button data-side="back">Back</button>
+    </div>
+    <div class="group">
+      <button id="btnZoomOut" title="Zoom out">−</button>
+      <span id="zoomLabel">100%</span>
+      <button id="btnZoomIn" title="Zoom in">+</button>
+      <button id="btnZoomFit" title="Fit card to window">Fit</button>
+    </div>
+    <div class="spacer"></div>
+    <button id="btnExport" class="primary">Export for laser…</button>
+  </header>
+
+  <main class="layout">
+    <aside class="panel left">
+      <section>
+        <h2>Quick Fill <small>edit names &amp; numbers</small></h2>
+        <div id="quickFill" class="quickfill"></div>
+      </section>
+      <section>
+        <h2>Add</h2>
+        <div class="addgrid">
+          <button data-add="text">T&nbsp; Text</button>
+          <button data-add="rect">▭ Rectangle</button>
+          <button data-add="ellipse">◯ Circle</button>
+          <button data-add="chip">▣ Chip pocket</button>
+          <button data-add="qr">▦ QR code</button>
+          <button data-add="hole">⊙ Key-ring hole</button>
+          <button data-add="image">🖼 Image</button>
+          <button data-add="svg">✒ SVG logo</button>
+          <button data-add="erase" title="Hide part of an image, e.g. an old name or number">⌫ Erase box</button>
+        </div>
+      </section>
+      <section class="grow">
+        <h2>Layers <small>top = front-most</small></h2>
+        <ul id="layerList" class="layers"></ul>
+      </section>
+    </aside>
+
+    <div class="stage-wrap" id="stageWrap">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="hint" id="hint">Click an item to select it · drag to move · drag the corner square to resize · arrow keys nudge</div>
+    </div>
+
+    <aside class="panel right">
+      <div id="props"></div>
+    </aside>
+  </main>
+
+  <!-- New project dialog -->
+  <dialog id="dlgNew">
+    <form method="dialog">
+      <h2>Start a new card</h2>
+      <div id="templateList" class="templates"></div>
+      <menu><button value="cancel">Cancel</button></menu>
+    </form>
+  </dialog>
+
+  <!-- Export dialog -->
+  <dialog id="dlgExport">
+    <form method="dialog" id="exportForm">
+      <h2>Export for laser</h2>
+      <label>File type
+        <select name="format">
+          <option value="svg">SVG – LightBurn, xTool, Glowforge, Inkscape</option>
+          <option value="dxf">DXF – EzCad (fiber), RDWorks, LaserGRBL, CAD</option>
+          <option value="png">PNG – raster engraving image</option>
+        </select>
+      </label>
+      <label>Side
+        <select name="side">
+          <option value="current">Current side</option>
+          <option value="front">Front</option>
+          <option value="back">Back</option>
+          <option value="both">Both (two files)</option>
+        </select>
+      </label>
+      <fieldset>
+        <legend>Include</legend>
+        <label class="check"><input type="checkbox" name="engrave" checked /> <span class="sw" style="background:#000"></span> Engrave (fill)</label>
+        <label class="check"><input type="checkbox" name="score" checked /> <span class="sw" style="background:#00f"></span> Line engrave</label>
+        <label class="check"><input type="checkbox" name="cut" checked /> <span class="sw" style="background:#f00"></span> Cut (incl. card outline)</label>
+      </fieldset>
+      <label class="check"><input type="checkbox" name="mirror" /> Mirror horizontally (for back-side / flipped jigs)</label>
+      <div class="png-only">
+        <label>Resolution (DPI)
+          <select name="dpi">
+            <option>300</option><option>600</option><option selected>1000</option><option>1200</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" name="invert" /> Invert (white = engrave)</label>
+      </div>
+      <p class="note" id="exportNote"></p>
+      <menu>
+        <button value="cancel">Cancel</button>
+        <button value="ok" class="primary" id="btnDoExport">Export</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <input type="file" id="fileInput" hidden />
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
