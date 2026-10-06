@@ -25,8 +25,11 @@
     "@fontsource/roboto-mono": "^5.3.0",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "opentype.js": "^2.0.0",
-    "qrcode-generator": "^2.0.4"
+    "qrcode-generator": "^2.0.4",
+    "@anthropic-ai/sdk": "^0.131.0",
+    "zod": "^4.6.5"
   },
   "build": {
     "appId": "com.lasercutx.carddesigner",

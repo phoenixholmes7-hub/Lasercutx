@@ -10,16 +10,45 @@ import {
   transformPath,
   fromOpentype,
   arcToCubics,
+  pathBounds,
 } from './geometry.js';
 
 export const PT_TO_MM = 25.4 / 72;
 
+// Workspace presets. `kind: 'card'` shows the safe area and cuts the outline by
+// default; other presets are general laser projects (signs, coasters, tags…).
 export const CARD_PRESETS = {
-  iso: { label: 'Credit card – ISO ID-1 (85.60 × 53.98 mm)', w: 85.6, h: 53.98, radius: 3.18 },
-  us: { label: 'US business card (88.9 × 50.8 mm)', w: 88.9, h: 50.8, radius: 3 },
-  eu: { label: 'EU business card (85 × 55 mm)', w: 85, h: 55, radius: 3 },
-  custom: { label: 'Custom size', w: 85.6, h: 53.98, radius: 3.18 },
+  iso: { label: 'Credit card – ISO ID-1 (85.60 × 53.98 mm)', w: 85.6, h: 53.98, radius: 3.18, kind: 'card' },
+  us: { label: 'US business card (88.9 × 50.8 mm)', w: 88.9, h: 50.8, radius: 3, kind: 'card' },
+  eu: { label: 'EU business card (85 × 55 mm)', w: 85, h: 55, radius: 3, kind: 'card' },
+  tag: { label: 'Key-chain tag (60 × 25 mm)', w: 60, h: 25, radius: 5, kind: 'piece' },
+  coaster: { label: 'Round coaster (Ø 100 mm)', w: 100, h: 100, radius: 0, shape: 'ellipse', kind: 'piece' },
+  sign: { label: 'Sign (200 × 100 mm)', w: 200, h: 100, radius: 4, kind: 'piece' },
+  bed300: { label: 'Laser bed 300 × 200 mm (free layout)', w: 300, h: 200, radius: 0, kind: 'bed' },
+  bed400: { label: 'Laser bed 400 × 400 mm (free layout)', w: 400, h: 400, radius: 0, kind: 'bed' },
+  a4: { label: 'A4 sheet (297 × 210 mm)', w: 297, h: 210, radius: 0, kind: 'bed' },
+  custom: { label: 'Custom size', w: 85.6, h: 53.98, radius: 3.18, kind: 'piece' },
 };
+
+export function applyPreset(card, key) {
+  const pr = CARD_PRESETS[key];
+  card.preset = key;
+  if (!pr || key === 'custom') return;
+  Object.assign(card, { w: pr.w, h: pr.h, radius: pr.radius, shape: pr.shape || 'rect', kind: pr.kind });
+  // a free laser bed is a work area, not a piece to cut out
+  card.includeOutline = pr.kind !== 'bed';
+}
+
+// Per-layer machine settings (LightBurn-style "Cuts / Layers"), used for G-code.
+export function laserDefaults() {
+  return {
+    engrave: { output: true, speed: 3000, power: 30, passes: 1, interval: 0.1, bidirectional: true },
+    score: { output: true, speed: 1500, power: 40, passes: 1 },
+    cut: { output: true, speed: 300, power: 90, passes: 2 },
+    image: { output: true, speed: 3000, power: 40, passes: 1, interval: 0.1 },
+    machine: { maxS: 1000, travel: 6000, laserMode: 'M4', airAssist: false },
+  };
+}
 
 // Laser operations. Colours follow the common LightBurn / RDWorks convention so
 // layers are recognised automatically on import.
@@ -35,6 +64,12 @@ export const MATERIALS = {
   gold: { label: 'Gold', base: '#c9a548', base2: '#f1dc94', mark: '#5b4614' },
   rose: { label: 'Rose gold', base: '#d29c8a', base2: '#f3d1c4', mark: '#6b3a2c' },
   blue: { label: 'Anodised blue', base: '#23406e', base2: '#3e66a8', mark: '#d7dde6' },
+  wood: { label: 'Wood / plywood', base: '#c89b63', base2: '#e2c08f', mark: '#4a2c12' },
+  acrylic: { label: 'Clear acrylic', base: '#d9eef5', base2: '#f4fbfd', mark: '#7a95a3' },
+  blackacrylic: { label: 'Black acrylic', base: '#121316', base2: '#2a2c31', mark: '#e8eaee' },
+  leather: { label: 'Leather', base: '#8a5634', base2: '#a8714a', mark: '#2b170a' },
+  slate: { label: 'Slate', base: '#3b4046', base2: '#565c63', mark: '#d4d7da' },
+  paper: { label: 'Paper / card stock', base: '#f3f1ea', base2: '#ffffff', mark: '#3a3a3a' },
 };
 
 export const FONTS = [
@@ -83,6 +118,14 @@ export function makeChip(props = {}) {
   return makeRect({ name: 'EMV chip pocket', op: 'engrave', x: 8.6, y: 18.4, w: 12.6, h: 11.4, radius: 1.6, ...props });
 }
 
+export function makePolygon(props = {}) {
+  return { id: newId(), type: 'polygon', name: 'Polygon', op: 'score', x: 10, y: 10, w: 14, h: 14, rotation: 0, sides: 6, star: false, inner: 0.5, ...props };
+}
+
+export function makeStar(props = {}) {
+  return makePolygon({ name: 'Star', sides: 5, star: true, inner: 0.45, ...props });
+}
+
 export function makeQr(props = {}) {
   return { id: newId(), type: 'qr', name: 'QR code', op: 'engrave', x: 60, y: 20, w: 18, h: 18, rotation: 0, data: 'https://example.com', ecl: 'M', ...props };
 }
@@ -108,9 +151,10 @@ export function newProject(template = 'blank') {
   const p = {
     format: 'lasercutx',
     version: 1,
-    card: { preset: 'iso', ...pick(CARD_PRESETS.iso, ['w', 'h', 'radius']), material: 'silver', includeOutline: true },
+    card: { preset: 'iso', ...pick(CARD_PRESETS.iso, ['w', 'h', 'radius', 'kind']), shape: 'rect', material: 'silver', includeOutline: true },
     sides: { front: [], back: [] },
     customFonts: [],
+    laser: laserDefaults(),
   };
   const t = TEMPLATES[template];
   if (t) t.build(p);
@@ -431,6 +475,59 @@ export const TEMPLATES = {
       ];
     },
   },
+
+  // ----- other laser projects -----
+  workspace: {
+    group: 'Other projects',
+    label: 'Free layout on a 300 × 200 mm bed',
+    desc: 'Any project: signs, tags, ornaments, nesting several parts – like an empty LightBurn workspace.',
+    build(p) {
+      applyPreset(p.card, 'bed300');
+      p.card.material = 'wood';
+    },
+  },
+  coaster: {
+    group: 'Other projects',
+    label: 'Round coaster with curved text',
+    desc: 'Ø 100 mm, text curved along the top and bottom, engraved ring and centre star.',
+    build(p) {
+      applyPreset(p.card, 'coaster');
+      p.card.material = 'wood';
+      p.sides.front = [
+        makeEllipse({ name: 'Ring', op: 'score', x: 6, y: 6, w: 88, h: 88 }),
+        ctext({ name: 'Top text', text: 'HOME SWEET HOME', font: 'montserrat', weight: 700, sizePt: 13, letterSpacing: 0.8, arc: 36, x: 50, y: 12 }),
+        ctext({ name: 'Bottom text', text: 'EST. 2024', font: 'montserrat', sizePt: 11, letterSpacing: 1, arc: -36, x: 50, y: 74 }),
+        makeStar({ name: 'Centre star', op: 'engrave', x: 38, y: 37, w: 24, h: 24 }),
+      ];
+    },
+  },
+  keychain: {
+    group: 'Other projects',
+    label: 'Key-chain name tag',
+    desc: '60 × 25 mm tag with a cut-out hole and a big engraved name.',
+    build(p) {
+      applyPreset(p.card, 'tag');
+      p.card.material = 'wood';
+      p.sides.front = [
+        makeEllipse({ name: 'Key-ring hole', op: 'cut', x: 4, y: 10, w: 5, h: 5 }),
+        ctext({ name: 'Name', text: 'Alex', font: 'greatvibes', sizePt: 30, x: 35, y: 1.5 }),
+      ];
+    },
+  },
+  sign: {
+    group: 'Other projects',
+    label: 'Wooden sign',
+    desc: '200 × 100 mm sign with a double border and large title.',
+    build(p) {
+      applyPreset(p.card, 'sign');
+      p.card.material = 'wood';
+      p.sides.front = [
+        ...doubleBorder(p.card, 5, 1.5),
+        ctext({ name: 'Title', text: 'The Workshop', font: 'playfair', weight: 700, sizePt: 60, x: 100, y: 22 }),
+        ctext({ name: 'Subtitle', format: 'upper', text: 'MADE WITH LOVE', font: 'montserrat', sizePt: 16, letterSpacing: 3, x: 100, y: 66 }),
+      ];
+    },
+  },
 };
 
 // ---------- quick-fill formatting ----------
@@ -468,7 +565,25 @@ export function formatText(format, value) {
 // Returns the element's local → card matrix. Local space is the element's own
 // box from (0, 0) to (w, h); rotation is around the box centre.
 export function elementMatrix(el, w, h) {
-  return compose(translate(el.x, el.y), rotate(el.rotation || 0, w / 2, h / 2));
+  const m = compose(translate(el.x, el.y), rotate(el.rotation || 0, w / 2, h / 2));
+  if (!el.flipX && !el.flipY) return m;
+  const fx = el.flipX ? -1 : 1;
+  const fy = el.flipY ? -1 : 1;
+  return compose(m, [fx, 0, 0, fy, el.flipX ? w : 0, el.flipY ? h : 0]);
+}
+
+// Regular polygon / star inside the box (0,0)-(w,h), first point at the top.
+export function polygonPath(w, h, sides, star, inner) {
+  const n = Math.max(3, Math.round(sides || 3));
+  const pts = star ? n * 2 : n;
+  const cmds = [];
+  for (let i = 0; i < pts; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / pts;
+    const k = star && i % 2 ? Math.max(0.05, Math.min(0.95, inner || 0.5)) : 1;
+    cmds.push({ type: i ? 'L' : 'M', x: w / 2 + (w / 2) * k * Math.cos(a), y: h / 2 + (h / 2) * k * Math.sin(a) });
+  }
+  cmds.push({ type: 'Z' });
+  return cmds;
 }
 
 // Lays out multi-line text with an opentype.js font. Returns local-space path
@@ -503,17 +618,35 @@ export function layoutText(el, font) {
   const pad = (lineH - (ascent + descent)) / 2; // centre glyphs vertically in each line
 
   const cmds = [];
+  const R = Number(el.arc) || 0; // bend radius in mm: + arches up, − curves down
+  const b0 = pad + ascent;
   laid.forEach((l, li) => {
     let ox = 0;
     if (el.align === 'center') ox = (w - l.width) / 2;
     else if (el.align === 'right') ox = w - l.width;
     const baseline = li * lineH + pad + ascent;
     for (const { g, x } of l.items) {
-      const p = g.getPath(ox + x, baseline, sizeMm);
-      cmds.push(...fromOpentype(p.commands));
+      if (!R) {
+        cmds.push(...fromOpentype(g.getPath(ox + x, baseline, sizeMm).commands));
+        continue;
+      }
+      // Curved text: place each glyph on a circle, rotated to follow it.
+      const adv = (g.advanceWidth || 0) * s;
+      const gc = ox + x + adv / 2;
+      const glyph = fromOpentype(g.getPath(-adv / 2, 0, sizeMm).commands);
+      const r = Math.abs(R) - (R > 0 ? 1 : -1) * (baseline - b0);
+      const a = (gc - w / 2) / Math.max(1, r);
+      const cy = R > 0 ? b0 + Math.abs(R) : b0 - Math.abs(R);
+      const px = w / 2 + r * Math.sin(a);
+      const py = R > 0 ? cy - r * Math.cos(a) : cy + r * Math.cos(a);
+      const deg = ((R > 0 ? a : -a) * 180) / Math.PI;
+      cmds.push(...transformPath(glyph, compose(translate(px, py), rotate(deg))));
     }
   });
-  return { cmds, w, h };
+  if (!R || !cmds.length) return { cmds, w, h };
+  // the curved text's box is its real extent
+  const b = pathBounds(cmds);
+  return { cmds: transformPath(cmds, translate(-b.x, -b.y)), w: Math.max(0.5, b.w), h: Math.max(0.5, b.h) };
 }
 
 // Builds QR modules as merged horizontal runs.
@@ -568,13 +701,17 @@ export function elementGeometry(el, ctx) {
     case 'ellipse':
       local = ellipsePath(w / 2, h / 2, w / 2, h / 2);
       break;
+    case 'polygon':
+      local = polygonPath(w, h, el.sides, el.star, el.inner);
+      break;
     case 'qr':
       h = w;
       local = ctx.qrcode ? qrPath({ ...el, w }, ctx.qrcode) : [];
       break;
     case 'vector': {
       const b = el.bounds || { x: 0, y: 0, w: 1, h: 1 };
-      const m = compose(scale(w / (b.w || 1), h / (b.h || 1)), translate(-b.x, -b.y));
+      // a straight horizontal/vertical line has zero width or height
+      const m = compose(scale(b.w > 1e-6 ? w / b.w : 1, b.h > 1e-6 ? h / b.h : 1), translate(-b.x, -b.y));
       local = transformPath(el.paths || [], m);
       fillRule = el.fillRule || 'nonzero';
       break;

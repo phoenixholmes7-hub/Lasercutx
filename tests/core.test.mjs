@@ -59,12 +59,13 @@ for (const tpl of Object.keys(TEMPLATES).filter((k) => k !== 'blank')) {
     const p = newProject(tpl);
     for (const side of ['front', 'back']) {
       const svg = toSVG(p, side, ctx, { mirror: side === 'back' });
-      assert.match(svg, /<svg[^>]+viewBox="0 0 85.6 53.98"/);
-      assert.match(svg, /id="card-outline"/);
+      assert.ok(svg.includes(`viewBox="0 0 ${p.card.w} ${p.card.h}"`), 'viewBox');
+      if (p.card.includeOutline) assert.match(svg, /id="card-outline"/);
       assert.ok(!/NaN|undefined/.test(svg), 'svg contains NaN/undefined');
       const { dxf } = toDXF(p, side, ctx);
       assert.match(dxf, /AC1009/);
       assert.ok(dxf.includes('ENGRAVE') && dxf.includes('CUT'));
+      if (p.sides[side].length || p.card.includeOutline) assert.match(dxf, /POLYLINE/);
       assert.ok(!/NaN|undefined/.test(dxf), 'dxf contains NaN/undefined');
       assert.ok(!/NaN|undefined/.test(toRasterSVG(p, side, ctx)));
     }
@@ -130,4 +131,54 @@ test('bulk sheet repeats the card in a grid', () => {
   assert.equal(bulk.match(/POLYLINE/g).length, single * 6);
   assert.match(bulk, /\$EXTMAX\r\n10\r\n262.8\r\n20\r\n110.96/);
   assert.equal((toRasterSVG(p, 'front', ctx, { sheet, layers: ['cut'] }).match(/<path/g) || []).length, 6 + 0 * single);
+});
+
+test('hatch fills a square with a hole using the nonzero rule', async () => {
+  const { hatch } = await import('../src/js/gcode.js');
+  const outer = rectPath(0, 0, 10, 10);
+  // hole drawn in the opposite direction
+  const hole = [
+    { type: 'M', x: 3, y: 3 },
+    { type: 'L', x: 3, y: 7 },
+    { type: 'L', x: 7, y: 7 },
+    { type: 'L', x: 7, y: 3 },
+    { type: 'Z' },
+  ];
+  const segs = hatch([...outer, ...hole], 1);
+  assert.equal(new Set(segs.map((s) => s[1])).size, 10);
+  const mid = segs.filter((s) => s[1] === 5.5);
+  assert.equal(mid.length, 2, JSON.stringify(mid));
+  const len = segs.reduce((a, [x0, , x1]) => a + Math.abs(x1 - x0), 0);
+  assert.ok(Math.abs(len - (100 - 16)) < 1e-6, String(len));
+});
+
+test('G-code: units, inner cuts before outline, power scaling', async () => {
+  const { toGcode } = await import('../src/js/gcode.js');
+  const p = newProject('keychain');
+  const { gcode, stats } = toGcode(p, 'front', ctx);
+  assert.match(gcode, /^; LaserCutX/);
+  assert.match(gcode, /\nG21\nG90\nM4 S0\n/);
+  const hole = gcode.indexOf('Cut: Key-ring hole');
+  const outline = gcode.indexOf('Cut: Card outline');
+  assert.ok(hole > 0 && outline > hole, 'hole cut before outline');
+  assert.ok(gcode.includes('S900 F300'), 'cut power 90% of S1000 at 300 mm/min');
+  assert.ok(gcode.indexOf('Fill: Name') < hole, 'engrave before cut');
+  assert.ok(stats.seconds > 0 && !/NaN/.test(gcode));
+});
+
+test('polygons, stars, flips and curved text', async () => {
+  const { makePolygon, makeStar, elementMatrix } = await import('../src/js/model.js');
+  const hex = elementGeometry(makePolygon({ x: 0, y: 0, w: 10, h: 10, sides: 6 }), ctx);
+  assert.equal(hex.cmds.filter((c) => c.type === 'L').length, 5);
+  const star = elementGeometry(makeStar({ x: 0, y: 0, w: 10, h: 10, sides: 5 }), ctx);
+  assert.equal(star.cmds.filter((c) => c.type !== 'Z').length, 10);
+  // flipX mirrors inside the same box
+  const m = elementMatrix({ x: 5, y: 0, flipX: true }, 10, 4);
+  const [x0] = [m[0] * 0 + m[4]];
+  assert.equal(x0, 15);
+  // curved text is taller than straight text of the same size
+  const straight = elementGeometry(makeText({ text: 'HELLO WORLD', sizePt: 12 }), ctx);
+  const curved = elementGeometry(makeText({ text: 'HELLO WORLD', sizePt: 12, arc: 15 }), ctx);
+  assert.ok(curved.h > straight.h * 1.5, `${curved.h} vs ${straight.h}`);
+  assert.ok(!curved.cmds.some((c) => Number.isNaN(c.x)));
 });

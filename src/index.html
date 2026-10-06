@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' data: blob:" />
-  <title>LaserCutX – Metal Card Designer</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' data: blob: https://api.anthropic.com" />
+  <title>LaserCutX – Laser Designer</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -19,6 +19,12 @@
       <button id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
       <button id="btnRedo" title="Redo (Ctrl+Y)">↷</button>
     </div>
+    <div class="group seg" id="toolBar" title="Tools">
+      <button data-tool="select" class="active" title="Select / move (V)">⬚</button>
+      <button data-tool="pen" title="Pen: click points, click the first point to close, double-click or Enter to finish (P)">✎</button>
+      <button data-tool="rect" title="Draw rectangle (R)">▭</button>
+      <button data-tool="ellipse" title="Draw ellipse (E)">◯</button>
+    </div>
     <div class="group seg" id="sideToggle">
       <button data-side="front" class="active">Front</button>
       <button data-side="back">Back</button>
@@ -27,11 +33,23 @@
       <button id="btnZoomOut" title="Zoom out">−</button>
       <span id="zoomLabel">100%</span>
       <button id="btnZoomIn" title="Zoom in">+</button>
-      <button id="btnZoomFit" title="Fit card to window">Fit</button>
+      <button id="btnZoomFit" title="Fit workspace to window">Fit</button>
+    </div>
+    <div class="group">
+      <select id="snapSel" title="Snap to grid while moving and drawing">
+        <option value="0">No snap</option>
+        <option value="0.1" selected>Snap 0.1</option>
+        <option value="0.5">Snap 0.5</option>
+        <option value="1">Snap 1</option>
+        <option value="5">Snap 5</option>
+      </select>
+      <button id="btnGrid" title="Show grid">#</button>
     </div>
     <div class="spacer"></div>
-    <button id="btnBulk" title="Export several copies of this card on one laser job">Bulk ×6…</button>
-    <button id="btnExport" class="primary">Export for laser…</button>
+    <button id="btnSettings" title="Settings: laser speed/power per layer, Claude AI key">⚙ Settings</button>
+    <button id="btnMachine" title="Connect to a laser over USB and send the job">🔌 Laser</button>
+    <button id="btnBulk" title="Export several copies of this design on one laser job">Bulk ×6</button>
+    <button id="btnExport" class="primary">Export…</button>
   </header>
 
   <main class="layout">
@@ -51,9 +69,13 @@
           <button data-add="contactless">⦚ Contactless</button>
           <button data-add="qr">▦ QR code</button>
           <button data-add="hole">⊙ Key-ring hole</button>
+          <button data-add="polygon">⬡ Polygon</button>
+          <button data-add="star">★ Star</button>
+          <button data-add="line">― Line</button>
           <button data-add="image">🖼 Image</button>
           <button data-add="svg">✒ SVG logo</button>
           <button data-add="erase" title="Hide part of an image, e.g. an old name or number">⌫ Erase box</button>
+          <button data-add="paste" title="Paste an image you copied (Ctrl/Cmd+V also works)">📋 Paste image</button>
         </div>
       </section>
       <section class="grow">
@@ -64,7 +86,32 @@
 
     <div class="stage-wrap" id="stageWrap">
       <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div class="hint" id="hint">Click an item to select it · drag to move · drag the corner square to resize · arrow keys nudge</div>
+      <div class="statusbar"><span class="hint" id="hint"></span><span class="status" id="status"></span></div>
+      <div class="machine" id="machinePanel" hidden>
+        <div class="mhead"><b>🔌 Laser</b> <span id="mState" class="pill">Disconnected</span><button type="button" id="mClose" class="x" title="Close">✕</button></div>
+        <div class="btnrow"><button type="button" id="mConnect" class="primary">Connect via USB</button></div>
+        <div class="mbody">
+          <div class="mpos" id="mPos">X 0.00 · Y 0.00</div>
+          <div class="btnrow"><button type="button" data-m="home">⌂ Home</button><button type="button" data-m="unlock">🔓 Unlock</button><button type="button" data-m="origin" title="Make the laser's current position the job's bottom-left corner">◎ Set origin</button></div>
+          <div class="jog">
+            <span></span><button type="button" data-jog="0,1">▲</button><span></span>
+            <button type="button" data-jog="-1,0">◀</button><button type="button" data-m="frame" title="Trace the job outline with the laser off">▢</button><button type="button" data-jog="1,0">▶</button>
+            <span></span><button type="button" data-jog="0,-1">▼</button><span></span>
+          </div>
+          <div class="row">
+            <label>Step <select id="mStep"><option>0.1</option><option>1</option><option selected>10</option><option>50</option></select></label>
+            <label>Jog speed <select id="mFeed"><option>1000</option><option selected>3000</option><option>6000</option></select></label>
+          </div>
+          <label>Start job from
+            <select id="mOrigin"><option value="origin">Origin (set with ◎)</option><option value="current">Current laser position</option><option value="absolute">Machine 0,0 (absolute)</option></select>
+          </label>
+          <div class="btnrow"><button type="button" id="mStart" class="primary">▶ Start job</button><button type="button" id="mPause">⏸ Pause</button><button type="button" id="mStop" class="danger">■ Stop</button></div>
+          <progress id="mProgress" max="1" value="0"></progress>
+          <div class="mlog" id="mLog"></div>
+          <input type="text" id="mCmd" placeholder="Send a G-code / GRBL command (e.g. $$) and press Enter" />
+        </div>
+        <p class="note">Works with GRBL lasers (most diode and many CO₂ machines). Fiber (EzCad) and Ruida machines: use Export instead.</p>
+      </div>
     </div>
 
     <aside class="panel right">
@@ -75,7 +122,13 @@
   <!-- New project dialog -->
   <dialog id="dlgNew">
     <form method="dialog">
-      <h2>Start a new card</h2>
+      <h2>Start something new</h2>
+      <div class="ai-box">
+        <b>✨ AI Imagine</b> <span class="muted">– describe it and Claude designs an editable layout</span>
+        <textarea id="aiPrompt" rows="3" placeholder="e.g. Black metal business card for a tattoo artist called Raven Ink, with a QR code to my Instagram"></textarea>
+        <div class="btnrow"><button type="button" id="btnImagine" class="primary">Imagine with Claude</button><button type="button" id="btnFromPicture">🖼 Make a picture editable…</button></div>
+        <p class="note" id="aiNote"></p>
+      </div>
       <div id="templateList" class="templates"></div>
       <menu><button value="cancel">Cancel</button></menu>
     </form>
@@ -90,6 +143,7 @@
           <option value="svg">SVG – LightBurn, xTool, Glowforge, Inkscape</option>
           <option value="dxf">DXF – EzCad (fiber), RDWorks, LaserGRBL, CAD</option>
           <option value="png">PNG – raster engraving image</option>
+          <option value="gcode">G-code – GRBL lasers (uses Laser settings)</option>
         </select>
       </label>
       <label>Side
@@ -131,6 +185,50 @@
       </menu>
     </form>
   </dialog>
+
+  <!-- Settings dialog -->
+  <dialog id="dlgSettings">
+    <form method="dialog" id="settingsForm">
+      <h2>⚙ Settings</h2>
+      <div class="tabs"><button type="button" data-tab="laser" class="active">Laser layers</button><button type="button" data-tab="claude">✨ Claude AI</button></div>
+      <div class="tab" data-pane="laser">
+        <p class="note">Speed, power and passes for each layer – used for G-code export and when sending jobs over USB.</p>
+        <table class="laser-table">
+          <thead><tr><th>Layer</th><th>Output</th><th>Speed<br>mm/min</th><th>Power<br>%</th><th>Passes</th><th>Line interval<br>mm</th></tr></thead>
+          <tbody id="laserRows"></tbody>
+        </table>
+        <div class="row">
+          <label>Max spindle (S value for 100%) <input type="number" name="maxS" min="1" step="1" /></label>
+          <label>Travel speed mm/min <input type="number" name="travel" min="100" step="100" /></label>
+        </div>
+        <div class="row">
+          <label>Laser mode
+            <select name="laserMode"><option value="M4">M4 – dynamic power (recommended)</option><option value="M3">M3 – constant power</option></select>
+          </label>
+          <label class="check" style="align-self:end"><input type="checkbox" name="airAssist" /> Air assist (M8)</label>
+        </div>
+        <p class="note">Start low and test on scrap first.</p>
+      </div>
+      <div class="tab" data-pane="claude" hidden>
+        <p class="note" id="claudeStatus"></p>
+        <div id="claudeSignedOut">
+          <ol class="steps">
+            <li>Open <b>console.anthropic.com</b> and sign in.</li>
+            <li>Go to <b>API Keys</b> → <b>Create key</b>, and copy it.</li>
+            <li>Paste it below and press <b>Save key</b>.</li>
+          </ol>
+          <label>Claude API key <input type="password" name="key" placeholder="sk-ant-…" autocomplete="off" /></label>
+          <div class="btnrow"><button type="button" id="btnSaveKey" class="primary">Save key</button></div>
+        </div>
+        <div id="claudeSignedIn" hidden><div class="btnrow"><button type="button" id="btnForgetKey" class="danger">Remove key</button></div></div>
+        <p class="note">Your key is used only to talk to Claude for AI Imagine and Make editable. Desktop app: stored encrypted by your OS. Browser: kept in this browser only. Usage is billed to your Anthropic account.</p>
+      </div>
+      <menu><button value="cancel">Close</button><button value="ok" class="primary" id="btnSettingsSave">Save</button></menu>
+    </form>
+  </dialog>
+
+  <!-- busy overlay for AI -->
+  <div id="busy" class="busy"><div><div class="spinner"></div><p id="busyText">Claude is working…</p></div></div>
 
   <input type="file" id="fileInput" hidden />
   <div id="toast" class="toast"></div>

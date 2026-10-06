@@ -32,3 +32,10 @@ for (const [pkg, prefix, weights] of fonts) {
   }
   copy(`@fontsource/${pkg}/LICENSE`, `fonts/${prefix}.LICENSE.txt`);
 }
+
+// Claude SDK + zod bundled for the browser (AI Imagine / Make editable)
+require('child_process').execFileSync(
+  process.execPath,
+  [require.resolve('esbuild/bin/esbuild'), path.join(__dirname, 'claude-sdk-entry.mjs'), '--bundle', '--format=esm', '--platform=browser', '--minify', '--legal-comments=eof', `--outfile=${path.join(out, 'claude-sdk.mjs')}`],
+  { stdio: 'inherit' }
+);

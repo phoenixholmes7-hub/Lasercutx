@@ -1,6 +1,6 @@
 // Laser file exporters: SVG (LightBurn, xTool, Glowforge, Inkscape…),
 // DXF R12 (EzCad, RDWorks, LaserGRBL, CAD) and the SVG used for PNG rasters.
-import { rectPath, transformPath, toSvgD, flatten, IDENTITY } from './geometry.js';
+import { rectPath, ellipsePath, transformPath, toSvgD, flatten, IDENTITY } from './geometry.js';
 import { OPS, elementGeometry } from './model.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -15,6 +15,7 @@ export function collectSide(project, side, ctx) {
 }
 
 export function outlinePath(card) {
+  if (card.shape === 'ellipse') return ellipsePath(card.w / 2, card.h / 2, card.w / 2, card.h / 2);
   return rectPath(0, 0, card.w, card.h, card.radius || 0);
 }
 
@@ -253,4 +254,21 @@ export function toDXF(project, side, ctx, opts = {}) {
     'EOF',
   ];
   return { dxf: out.join('\r\n') + '\r\n', skipped };
+}
+
+// All marks of one side placed on the sheet (bulk copies + mirror applied),
+// in sheet millimetres (y down). Used by the G-code generator.
+export function placedItems(project, side, ctx, opts = {}) {
+  const { card } = project;
+  const { layout, mats } = placements(card, opts);
+  const items = collectSide(project, side, ctx);
+  const out = [];
+  for (const mm of mats) {
+    for (const { el, geo } of items) {
+      if (geo.raster) out.push({ el, op: el.op, raster: true, matrix: matMul(mm, geo.matrix), w: geo.w, h: geo.h });
+      else if (geo.cmds.length) out.push({ el, op: el.op, cmds: transformPath(geo.cmds, mm), fillRule: geo.fillRule });
+    }
+    if (card.includeOutline) out.push({ el: { name: 'Card outline' }, op: 'cut', cmds: transformPath(outlinePath(card), mm), outline: true });
+  }
+  return { layout, items: out };
 }

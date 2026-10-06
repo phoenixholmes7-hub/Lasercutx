@@ -128,3 +128,54 @@ dialog .bulk.off .bulk-opts { opacity: 0.4; pointer-events: none; }
 #dlgNew { width: 520px; }
 .templates { max-height: 64vh; overflow-y: auto; padding-right: 4px; }
 .templates .tgroup { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--accent); margin: 6px 0 0; }
+
+.muted { color: var(--muted); font-weight: normal; }
+#toolBar button { padding: 6px 9px; }
+#toolBar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#snapSel { width: auto; }
+#btnGrid.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.topbar { overflow-x: auto; }
+.topbar button, .topbar select { white-space: nowrap; flex: none; }
+.statusbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 16px; justify-content: space-between; padding: 6px 12px; color: var(--muted); font-size: 12px; pointer-events: none; background: linear-gradient(transparent, #0008); }
+.statusbar .hint { position: static; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ai-box { background: linear-gradient(135deg, #2b2440, #1f2a40); border: 1px solid #4a3f75; border-radius: 8px; padding: 10px; margin-bottom: 12px; }
+.ai-box textarea { margin-top: 8px; }
+.laser-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.laser-table th { color: var(--muted); font-weight: normal; font-size: 11px; text-align: left; padding: 2px 4px; }
+.laser-table td { padding: 3px 4px; }
+.laser-table td:first-child { white-space: nowrap; }
+.laser-table input[type='number'] { width: 70px; }
+#dlgLaser { width: 600px; }
+.steps { color: var(--text); padding-left: 18px; line-height: 1.6; }
+.busy { position: fixed; inset: 0; background: #000a; display: none; align-items: center; justify-content: center; z-index: 100; color: #fff; text-align: center; }
+.busy.show { display: flex; }
+.spinner { width: 34px; height: 34px; border: 3px solid #fff3; border-top-color: #b18cff; border-radius: 50%; margin: 0 auto 12px; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.layers .lock { background: none; border: none; padding: 0 2px; opacity: 0.7; }
+.layers .grp { color: var(--accent); font-size: 10px; }
+.sub { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 4px; }
+.btnrow.align button { padding: 5px 4px; font-size: 15px; }
+
+.stage-wrap { padding-bottom: 28px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; }
+.tabs button.active { border-bottom-color: var(--accent); color: #fff; }
+#dlgSettings { width: 620px; }
+.machine { position: absolute; top: 12px; right: 12px; width: 300px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 30px #0008; z-index: 5; }
+.machine[hidden] { display: none; }
+.machine label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.machine label select { margin-top: 3px; }
+.machine .row label { margin-bottom: 0; }
+.mhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mhead .x { margin-left: auto; padding: 2px 8px; }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--panel2); color: var(--muted); }
+.pill.ok { background: #1f4d2c; color: #8be0a4; }
+.pill.run { background: #4d3a1f; color: #ffcf7a; }
+.pill.alarm { background: #5a1f22; color: #ff9a9e; }
+.mpos { font-variant-numeric: tabular-nums; font-size: 15px; text-align: center; margin: 4px 0 8px; }
+.jog { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 150px; margin: 6px auto 10px; }
+.jog button { padding: 8px 0; }
+.mbody.off { opacity: 0.4; pointer-events: none; }
+#mProgress { width: 100%; height: 8px; margin: 6px 0; }
+.mlog { height: 80px; overflow-y: auto; font: 11px ui-monospace, Menlo, Consolas, monospace; background: #0d0e11; border-radius: 6px; padding: 4px 6px; color: #9fb3c8; margin-bottom: 6px; white-space: pre-wrap; }

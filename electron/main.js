@@ -1,8 +1,9 @@
 // Electron main process: window, menu, app:// protocol and native file dialogs.
-const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, net, shell, safeStorage, session } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
+const fsSync = require('fs');
 
 const SRC = path.join(__dirname, '..', 'src');
 
@@ -74,6 +75,27 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ---------- secrets (Claude API key), encrypted by the OS keychain ----------
+const secretFile = (name) => path.join(app.getPath('userData'), `${name.replace(/[^a-z0-9-]/gi, '')}.secret`);
+ipcMain.handle('secret-get', (_e, name) => {
+  try {
+    const buf = fsSync.readFileSync(secretFile(name));
+    return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(buf) : buf.toString('utf8');
+  } catch {
+    return '';
+  }
+});
+ipcMain.handle('secret-set', (_e, name, value) => {
+  const file = secretFile(name);
+  if (!value) {
+    fsSync.rmSync(file, { force: true });
+    return true;
+  }
+  const data = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(value) : Buffer.from(value, 'utf8');
+  fsSync.writeFileSync(file, data, { mode: 0o600 });
+  return true;
+});
+
 ipcMain.handle('save-file', async (_e, { name, data, filter }) => {
   const res = await dialog.showSaveDialog(win, {
     defaultPath: name,
@@ -100,7 +122,32 @@ ipcMain.handle('save-files', async (_e, { files }) => {
   return written;
 });
 
+// USB serial (GRBL lasers): let the page use Web Serial and pick the port
+// with a simple native chooser.
+function setupSerial() {
+  const ses = session.defaultSession;
+  ses.setPermissionCheckHandler((_wc, permission) => permission === 'serial' || permission === 'clipboard-read' || permission === 'clipboard-sanitized-write');
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial');
+  ses.on('select-serial-port', async (event, portList, _wc, callback) => {
+    event.preventDefault();
+    if (!portList.length) {
+      await dialog.showMessageBox(win, { type: 'warning', message: 'No laser found', detail: 'Plug the laser in with USB, switch it on, and try again. On Windows you may need the CH340 driver.' });
+      return callback('');
+    }
+    const labels = portList.map((p) => `${p.displayName || p.portName}${p.portName && p.displayName ? ` (${p.portName})` : ''}`);
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      message: 'Choose your laser',
+      detail: 'Select the USB port your laser is connected to.',
+      buttons: [...labels, 'Cancel'],
+      cancelId: labels.length,
+    });
+    callback(response < portList.length ? portList[response].portId : '');
+  });
+}
+
 app.whenReady().then(() => {
+  setupSerial();
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url);
     const file = path.normalize(path.join(SRC, decodeURIComponent(pathname)));
