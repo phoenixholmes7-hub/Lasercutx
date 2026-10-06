@@ -1348,6 +1348,16 @@ function startProject(project) {
   fitZoom();
 }
 
+// Turns a login name like "phoenix.holmes" or "pholmes_7" into something to greet.
+export function friendlyName(raw) {
+  const s = String(raw || '').trim();
+  if (!s || /^(root|admin|administrator|user|owner|guest)$/i.test(s)) return '';
+  // a real full name ("Phoenix Holmes") -> first name
+  if (/\s/.test(s)) return s.split(/\s+/)[0];
+  const first = s.split(/[._\-\d]+/).filter(Boolean)[0] || s;
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 // Small picture of a template for the start screen.
 function templateThumb(key) {
   const p = newProject(key);
@@ -1374,7 +1384,8 @@ function templateThumb(key) {
 function showNewDialog({ welcome = false } = {}) {
   const dlg = $('#dlgNew');
   const list = $('#templateList');
-  $('#newTitle').textContent = welcome ? 'Welcome – what do you want to make?' : 'Start something new';
+  const who = friendlyName(window.lcx?.userName);
+  $('#newTitle').textContent = welcome ? `Welcome${who ? `, ${who}` : ''} – what do you want to make?` : 'Start something new';
   $('#newCancel').textContent = welcome ? 'Skip – start with a blank card' : 'Cancel';
   list.innerHTML = '';
 

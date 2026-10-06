@@ -4,6 +4,8 @@ const path = require('path');
 const fs = require('fs/promises');
 const { pathToFileURL } = require('url');
 const fsSync = require('fs');
+const os = require('os');
+const { execFileSync } = require('child_process');
 
 const SRC = path.join(__dirname, '..', 'src');
 
@@ -106,6 +108,28 @@ function buildMenu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// ---------- the computer user's name (for the welcome screen) ----------
+// Full name where the OS has one (macOS "Phoenix Holmes"), else the login name.
+function userDisplayName() {
+  let name = '';
+  try {
+    if (process.platform === 'darwin') name = execFileSync('id', ['-F'], { encoding: 'utf8', timeout: 1500 }).trim();
+    else if (process.platform === 'linux') name = (execFileSync('getent', ['passwd', os.userInfo().username], { encoding: 'utf8', timeout: 1500 }).split(':')[4] || '').split(',')[0].trim();
+  } catch {
+    /* fall back to the login name */
+  }
+  if (!name) {
+    try {
+      name = os.userInfo().username || '';
+    } catch {
+      name = process.env.USERNAME || process.env.USER || '';
+    }
+  }
+  return name.trim();
+}
+const cachedUserName = userDisplayName();
+ipcMain.on('user-name', (e) => (e.returnValue = cachedUserName));
 
 // ---------- secrets (Claude API key), encrypted by the OS keychain ----------
 const secretFile = (name) => path.join(app.getPath('userData'), `${name.replace(/[^a-z0-9-]/gi, '')}.secret`);

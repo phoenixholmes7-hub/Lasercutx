@@ -476,6 +476,153 @@ export const TEMPLATES = {
     },
   },
 
+  monogram: {
+    group: 'Business cards',
+    label: 'Minimal monogram',
+    desc: 'Big monogram in a ring on the front; name, title and contact on the back.',
+    build(p) {
+      const c = p.card;
+      c.material = 'black';
+      const cx = c.w / 2;
+      p.sides.front = [
+        makeEllipse({ name: 'Monogram ring', op: 'score', x: cx - 13, y: c.h / 2 - 13, w: 26, h: 26 }),
+        ctext({ name: 'Monogram', format: 'upper', text: 'AM', font: 'playfair', weight: 700, sizePt: 26, x: cx, y: c.h / 2 - 6.6 }),
+      ];
+      p.sides.back = [
+        ctext({ name: 'Name', text: 'Alex Morgan', font: 'playfair', weight: 700, sizePt: 13, x: cx, y: 10 }),
+        ctext({ name: 'Title', format: 'upper', text: 'ARCHITECT', font: 'montserrat', sizePt: 5.5, letterSpacing: 1.6, x: cx, y: 18.5 }),
+        makeRect({ name: 'Divider', op: 'engrave', x: cx - 6, y: 24, w: 12, h: 0.3 }),
+        ctext({ name: 'Contact', text: '+1 555 010 2030\nalex@studio-am.com\nstudio-am.com', font: 'montserrat', sizePt: 6, lineHeight: 1.7, x: cx, y: 28 }),
+      ];
+    },
+  },
+  corporate: {
+    group: 'Business cards',
+    label: 'Corporate / law firm',
+    desc: 'Serif firm name, accent bar, name and credentials, office details.',
+    build(p) {
+      const c = p.card;
+      c.material = 'silver';
+      p.sides.front = [
+        makeRect({ name: 'Accent bar', op: 'engrave', x: 6, y: 8, w: 1.2, h: 38 }),
+        makeText({ name: 'Firm', format: 'upper', text: 'MORGAN & REED', font: 'playfair', weight: 700, sizePt: 10, letterSpacing: 0.6, x: 10, y: 8 }),
+        makeText({ name: 'Firm subtitle', text: 'Attorneys at Law', font: 'playfair', sizePt: 6.5, x: 10, y: 14.5 }),
+        makeText({ name: 'Name', text: 'Alexandra Morgan, Esq.', font: 'montserrat', weight: 700, sizePt: 7.5, x: 10, y: 27 }),
+        makeText({ name: 'Title', text: 'Senior Partner', font: 'montserrat', sizePt: 6, x: 10, y: 31.5 }),
+        makeText({
+          name: 'Contact',
+          text: 'T  +1 555 010 2030\nE  amorgan@morganreed.law\nA  100 Main Street, Suite 400',
+          font: 'montserrat',
+          sizePt: 5.2,
+          lineHeight: 1.6,
+          x: 10,
+          y: 37.5,
+        }),
+      ];
+      p.sides.back = [ctext({ name: 'Firm', format: 'upper', text: 'MORGAN & REED', font: 'playfair', weight: 700, sizePt: 14, letterSpacing: 1.2, x: c.w / 2, y: 21 })];
+    },
+  },
+  realestate: {
+    group: 'Business cards',
+    label: 'Real estate agent',
+    desc: 'House icon, agent name, phone in large type and a QR code to your listings.',
+    build(p) {
+      const c = p.card;
+      c.material = 'gold';
+      const house = [
+        { type: 'M', x: 0, y: 6 },
+        { type: 'L', x: 6, y: 0 },
+        { type: 'L', x: 12, y: 6 },
+        { type: 'L', x: 10.4, y: 6 },
+        { type: 'L', x: 10.4, y: 12 },
+        { type: 'L', x: 7.3, y: 12 },
+        { type: 'L', x: 7.3, y: 8 },
+        { type: 'L', x: 4.7, y: 8 },
+        { type: 'L', x: 4.7, y: 12 },
+        { type: 'L', x: 1.6, y: 12 },
+        { type: 'L', x: 1.6, y: 6 },
+        { type: 'Z' },
+      ];
+      p.sides.front = [
+        shape('House icon', 'engrave', 7, 7, 10, 10, house),
+        makeText({ name: 'Agency', format: 'upper', text: 'GOLDEN KEY REALTY', font: 'montserrat', weight: 700, sizePt: 6.5, letterSpacing: 0.8, x: 20, y: 10 }),
+        makeText({ name: 'Name', text: 'Alex Morgan', font: 'playfair', weight: 700, sizePt: 13, x: 7, y: 22 }),
+        makeText({ name: 'Title', text: 'Licensed Realtor®', font: 'montserrat', sizePt: 5.5, x: 7, y: 30.5 }),
+        makeText({ name: 'Phone', text: '(555) 010-2030', font: 'montserrat', weight: 700, sizePt: 9, x: 7, y: 38 }),
+        makeText({ name: 'Email', text: 'alex@goldenkey.com', font: 'montserrat', sizePt: 5.5, x: 7, y: 44.5 }),
+        makeQr({ name: 'Listings QR', data: 'https://goldenkey.com/alex', x: 61, y: 24, w: 18, h: 18 }),
+        ctext({ name: 'QR caption', format: 'upper', text: 'MY LISTINGS', font: 'montserrat', weight: 700, sizePt: 4, letterSpacing: 0.5, x: 70, y: 44 }),
+      ];
+      p.sides.back = [
+        shape('House icon', 'engrave', c.w / 2 - 8, 10, 16, 16, house),
+        ctext({ name: 'Agency', format: 'upper', text: 'GOLDEN KEY REALTY', font: 'montserrat', weight: 700, sizePt: 9, letterSpacing: 1.2, x: c.w / 2, y: 32 }),
+      ];
+    },
+  },
+  vertical: {
+    group: 'Business cards',
+    label: 'Vertical / portrait',
+    desc: 'Portrait card: name at the top, contact in the middle, QR code at the bottom.',
+    build(p) {
+      const c = p.card;
+      Object.assign(c, { preset: 'custom', w: 53.98, h: 85.6, radius: 3.18, kind: 'card', material: 'blackacrylic' });
+      const cx = c.w / 2;
+      p.sides.front = [
+        ctext({ name: 'Name', text: 'Alex\nMorgan', font: 'montserrat', weight: 700, sizePt: 15, lineHeight: 1.05, letterSpacing: 0.3, x: cx, y: 8 }),
+        ctext({ name: 'Title', format: 'upper', text: 'BRAND DESIGNER', font: 'montserrat', sizePt: 5.5, letterSpacing: 1.4, x: cx, y: 25 }),
+        makeRect({ name: 'Divider', op: 'engrave', x: cx - 5, y: 30.5, w: 10, h: 0.3 }),
+        ctext({ name: 'Contact', text: '+1 555 010 2030\nalex@morgan.design\nmorgan.design', font: 'montserrat', sizePt: 5.8, lineHeight: 1.7, x: cx, y: 34 }),
+        makeQr({ name: 'QR code', data: 'https://morgan.design', x: cx - 10, y: 55, w: 20, h: 20 }),
+      ];
+      p.sides.back = [ctext({ name: 'Initials', format: 'upper', text: 'AM', font: 'orbitron', weight: 700, sizePt: 34, x: cx, y: 30 })];
+    },
+  },
+  tech: {
+    group: 'Business cards',
+    label: 'Tech startup',
+    desc: 'Hexagon logo mark, futuristic type, GitHub/LinkedIn line and a QR code.',
+    build(p) {
+      const c = p.card;
+      c.material = 'black';
+      p.sides.front = [
+        makePolygon({ name: 'Logo hexagon', op: 'score', x: 7, y: 7, w: 11, h: 11, sides: 6 }),
+        makePolygon({ name: 'Logo core', op: 'engrave', x: 9.75, y: 9.75, w: 5.5, h: 5.5, sides: 6 }),
+        makeText({ name: 'Company', format: 'upper', text: 'NEXORA', font: 'orbitron', weight: 700, sizePt: 10, letterSpacing: 1.2, x: 21, y: 9.3 }),
+        makeText({ name: 'Name', text: 'Alex Morgan', font: 'montserrat', weight: 700, sizePt: 10, x: 7, y: 26 }),
+        makeText({ name: 'Title', text: 'Co-founder & CTO', font: 'montserrat', sizePt: 6, x: 7, y: 32 }),
+        makeText({ name: 'Contact', text: 'alex@nexora.io  ·  +1 555 010 2030\ngithub.com/alexm  ·  in/alexmorgan', font: 'mono', sizePt: 4.8, lineHeight: 1.6, x: 7, y: 41 }),
+        makeQr({ name: 'QR code', data: 'https://nexora.io', x: 63, y: 7, w: 15, h: 15 }),
+      ];
+      p.sides.back = [
+        makePolygon({ name: 'Logo hexagon', op: 'score', x: c.w / 2 - 9, y: 11, w: 18, h: 18, sides: 6 }),
+        makePolygon({ name: 'Logo core', op: 'engrave', x: c.w / 2 - 4.5, y: 15.5, w: 9, h: 9, sides: 6 }),
+        ctext({ name: 'Company', format: 'upper', text: 'NEXORA', font: 'orbitron', weight: 700, sizePt: 11, letterSpacing: 2, x: c.w / 2, y: 34 }),
+      ];
+    },
+  },
+  badge: {
+    group: 'Business cards',
+    label: 'Badge logo (barber / tattoo / café)',
+    desc: 'Circular badge with curved shop name, centre star, and details beside it.',
+    build(p) {
+      const c = p.card;
+      c.material = 'rose';
+      const bx = 23;
+      const by = c.h / 2;
+      p.sides.front = [
+        makeEllipse({ name: 'Badge outer', op: 'score', x: bx - 17, y: by - 17, w: 34, h: 34 }),
+        makeEllipse({ name: 'Badge inner', op: 'score', x: bx - 9.5, y: by - 9.5, w: 19, h: 19 }),
+        ctext({ name: 'Shop name (curved)', format: 'upper', text: 'IRON & OAK', font: 'montserrat', weight: 700, sizePt: 6.5, letterSpacing: 0.6, arc: 13, x: bx, y: by - 16 }),
+        ctext({ name: 'Since (curved)', format: 'upper', text: 'EST 2024', font: 'montserrat', sizePt: 5, letterSpacing: 0.8, arc: -13, x: bx, y: by + 10.5 }),
+        makeStar({ name: 'Badge star', op: 'engrave', x: bx - 5, y: by - 5, w: 10, h: 10 }),
+        makeText({ name: 'Shop', format: 'upper', text: 'IRON & OAK', font: 'montserrat', weight: 700, sizePt: 10, letterSpacing: 0.8, x: 46, y: 12 }),
+        makeText({ name: 'Trade', text: 'Barber Shop', font: 'greatvibes', sizePt: 13, x: 46, y: 18.5 }),
+        makeText({ name: 'Contact', text: '+1 555 010 2030\n12 Main St, City\nironandoak.com', font: 'montserrat', sizePt: 5.2, lineHeight: 1.6, x: 46, y: 33 }),
+      ];
+      p.sides.back = [ctext({ name: 'Slogan', text: 'Look sharp.', font: 'greatvibes', sizePt: 26, x: c.w / 2, y: 17 })];
+    },
+  },
+
   // ----- other laser projects -----
   workspace: {
     group: 'Other projects',
