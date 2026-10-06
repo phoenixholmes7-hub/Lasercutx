@@ -55,7 +55,7 @@ const $ = (s) => document.querySelector(s);
 const OP_LABELS = { ...Object.fromEntries(Object.entries(OPS).map(([k, v]) => [k, v.label])), none: 'Guide only (not exported)' };
 
 const state = {
-  project: newProject('business'),
+  project: newProject('blank'), // the start screen picks what to make
   side: 'front',
   sel: new Set(), // selected element ids
   zoom: 8, // screen px per mm
@@ -1348,39 +1348,90 @@ function startProject(project) {
   fitZoom();
 }
 
-function showNewDialog() {
+// Small picture of a template for the start screen.
+function templateThumb(key) {
+  const p = newProject(key);
+  const c = p.card;
+  const mat = MATERIALS[c.material] || MATERIALS.silver;
+  const paths = p.sides.front
+    .filter((el) => !el.hidden && OPS[el.op])
+    .map((el) => {
+      const g = elementGeometry(el, ctx);
+      if (!g.cmds.length) return '';
+      const d = toSvgD(g.cmds, 2);
+      return el.op === 'engrave'
+        ? `<path d="${d}" fill="${mat.mark}" fill-rule="${g.fillRule}"/>`
+        : `<path d="${d}" fill="none" stroke="${el.op === 'cut' ? '#ff3b30' : mat.mark}" stroke-width="${Math.max(c.w, c.h) / 220}"/>`;
+    })
+    .join('');
+  const m = Math.max(c.w, c.h) * 0.04;
+  return `<svg viewBox="${-m} ${-m} ${c.w + 2 * m} ${c.h + 2 * m}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <defs><linearGradient id="tg-${key}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${mat.base2}"/><stop offset="0.6" stop-color="${mat.base}"/><stop offset="1" stop-color="${mat.base2}"/></linearGradient></defs>
+    <path d="${toSvgD(outlinePath(c), 2)}" fill="url(#tg-${key})"/>${paths}</svg>`;
+}
+
+// The start screen (also opened by New…).
+function showNewDialog({ welcome = false } = {}) {
   const dlg = $('#dlgNew');
   const list = $('#templateList');
+  $('#newTitle').textContent = welcome ? 'Welcome – what do you want to make?' : 'Start something new';
+  $('#newCancel').textContent = welcome ? 'Skip – start with a blank card' : 'Cancel';
   list.innerHTML = '';
-  let group = '';
-  for (const [key, t] of Object.entries(TEMPLATES)) {
-    if (t.group && t.group !== group) {
-      group = t.group;
-      const h = document.createElement('div');
-      h.className = 'tgroup';
-      h.textContent = group;
-      list.appendChild(h);
-    }
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.innerHTML = `<b>${t.label}</b><span>${t.desc || ''}</span>`;
-    b.onclick = () => {
-      dlg.close();
-      startProject(newProject(key));
-    };
-    list.appendChild(b);
-  }
-  const img = document.createElement('button');
-  img.type = 'button';
-  img.innerHTML = '<b>From an image (manual)…</b><span>Load a picture, cover old names or numbers with Erase boxes and type your own.</span>';
-  img.onclick = async () => {
+
+  const quick = document.createElement('div');
+  quick.className = 'quickstart';
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.innerHTML = '<b>📂 Open a project…</b><span>Continue a saved .lcx design</span>';
+  open.onclick = () => {
+    dlg.close();
+    openProject();
+  };
+  const manual = document.createElement('button');
+  manual.type = 'button';
+  manual.innerHTML = '<b>🖼 Start from an image…</b><span>Cover old names / numbers with Erase boxes and type your own</span>';
+  manual.onclick = async () => {
     dlg.close();
     startProject(newProject('blank'));
     await importImage();
   };
-  list.appendChild(img);
+  const blank = document.createElement('button');
+  blank.type = 'button';
+  blank.innerHTML = '<b>⬜ Blank card</b><span>Empty credit-card size – start from scratch</span>';
+  blank.onclick = () => {
+    dlg.close();
+    startProject(newProject('blank'));
+  };
+  quick.append(blank, open, manual);
+  list.appendChild(quick);
+
+  let group = '';
+  let grid = null;
+  for (const [key, t] of Object.entries(TEMPLATES)) {
+    if (key === 'blank') continue; // offered in the quick-start row
+    const g = t.group || 'Templates';
+    if (g !== group) {
+      group = g;
+      const h = document.createElement('div');
+      h.className = 'tgroup';
+      h.textContent = group;
+      grid = document.createElement('div');
+      grid.className = 'tgrid';
+      list.append(h, grid);
+    }
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tcard';
+    b.title = t.desc || '';
+    b.innerHTML = `<div class="thumb">${templateThumb(key)}</div><b>${t.label}</b><span>${t.desc || ''}</span>`;
+    b.onclick = () => {
+      dlg.close();
+      startProject(newProject(key));
+    };
+    grid.appendChild(b);
+  }
   $('#aiNote').textContent = state.aiSignedIn ? 'Claude is connected.' : 'You will be asked for your Claude API key the first time.';
-  dlg.showModal();
+  if (!dlg.open) dlg.showModal();
 }
 
 // ---------- Claude: AI Imagine & Make editable ----------
@@ -2331,19 +2382,20 @@ function wire() {
 const SPLASH_MS = 3000;
 const startedAt = performance.now();
 
+// Hides the splash, then opens the start screen.
 function hideSplash() {
   const el = $('#splash');
-  if (!el) return;
+  if (!el) return showNewDialog({ welcome: true });
   // the desktop app already showed a splash window: skip the overlay
   const wait = platform.isDesktop ? 0 : Math.max(0, SPLASH_MS - (performance.now() - startedAt));
   setTimeout(() => {
     el.classList.add('hide');
     setTimeout(() => el.remove(), 600);
+    showNewDialog({ welcome: true });
   }, wait);
 }
 
 async function init() {
-  if (platform.isDesktop) $('#splash')?.remove();
   wire();
   await loadBuiltInFonts();
   renderAll();

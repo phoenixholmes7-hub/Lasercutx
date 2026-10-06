@@ -129,7 +129,7 @@
   <!-- New project dialog -->
   <dialog id="dlgNew">
     <form method="dialog">
-      <h2>Start something new</h2>
+      <h2 id="newTitle">Start something new</h2>
       <div class="ai-box">
         <b>✨ AI Imagine</b> <span class="muted">– describe it and Claude designs an editable layout</span>
         <textarea id="aiPrompt" rows="3" placeholder="e.g. Black metal business card for a tattoo artist called Raven Ink, with a QR code to my Instagram"></textarea>
@@ -137,7 +137,7 @@
         <p class="note" id="aiNote"></p>
       </div>
       <div id="templateList" class="templates"></div>
-      <menu><button value="cancel">Cancel</button></menu>
+      <menu><button value="cancel" id="newCancel">Cancel</button></menu>
     </form>
   </dialog>
 
