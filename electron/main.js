@@ -13,9 +13,34 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let win;
+let splash;
+const SPLASH_MS = 3000;
+
+// Frameless "Holmes" splash shown while the editor loads in the background.
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 520,
+    height: 340,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    center: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  splash.loadURL('app://local/splash.html');
+  splash.once('ready-to-show', () => splash.show());
+  splash.on('closed', () => (splash = null));
+}
 
 function createWindow() {
+  const shownAt = Date.now();
   win = new BrowserWindow({
+    show: false,
     width: 1400,
     height: 880,
     minWidth: 1000,
@@ -30,6 +55,13 @@ function createWindow() {
     },
   });
   win.loadURL('app://local/index.html');
+  // show the editor once it has loaded and the splash has had its moment
+  win.once('ready-to-show', () => {
+    setTimeout(() => {
+      win.show();
+      if (splash) splash.close();
+    }, Math.max(0, SPLASH_MS - (Date.now() - shownAt)));
+  });
   // open external links in the system browser, never inside the app
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
@@ -155,6 +187,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   buildMenu();
+  createSplash();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

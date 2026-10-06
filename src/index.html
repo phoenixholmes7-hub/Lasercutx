@@ -6,8 +6,15 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' data: blob: https://api.anthropic.com" />
   <title>LaserCutX – Laser Designer</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="splash.css" />
 </head>
 <body>
+  <!-- startup splash (the desktop app shows its own splash window instead) -->
+  <div class="splash" id="splash">
+    <div class="splash-name">Holmes</div>
+    <div class="splash-sub">LaserCutX</div>
+    <div class="splash-bar"></div>
+  </div>
   <header class="topbar">
     <div class="brand">LaserCut<b>X</b></div>
     <div class="group">

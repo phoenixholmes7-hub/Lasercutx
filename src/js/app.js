@@ -2328,11 +2328,27 @@ function wire() {
   }
 }
 
+const SPLASH_MS = 3000;
+const startedAt = performance.now();
+
+function hideSplash() {
+  const el = $('#splash');
+  if (!el) return;
+  // the desktop app already showed a splash window: skip the overlay
+  const wait = platform.isDesktop ? 0 : Math.max(0, SPLASH_MS - (performance.now() - startedAt));
+  setTimeout(() => {
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 600);
+  }, wait);
+}
+
 async function init() {
+  if (platform.isDesktop) $('#splash')?.remove();
   wire();
   await loadBuiltInFonts();
   renderAll();
   fitZoom();
+  hideSplash();
   refreshAiStatus();
   window.__lcx = { state, ctx, renderAll, layoutToElements, select }; // handy for debugging & tests
 }
