@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import * as opentype from '../src/vendor/opentype.mjs';
 import qrcode from '../src/vendor/qrcode.mjs';
 import { parseSvgPath, flatten, pathBounds, toSvgD, rectPath } from '../src/js/geometry.js';
-import { newProject, FONTS, formatText, elementGeometry, makeText } from '../src/js/model.js';
-import { toSVG, toDXF, toRasterSVG } from '../src/js/exporters.js';
+import { newProject, FONTS, formatText, elementGeometry, makeText, TEMPLATES } from '../src/js/model.js';
+import { toSVG, toDXF, toRasterSVG, sheetLayout } from '../src/js/exporters.js';
 import { traceMask, loopsToPath } from '../src/js/trace.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -54,7 +54,7 @@ test('text layout produces geometry inside its box', () => {
   assert.ok(b.x >= 5 - 0.5 && b.y >= 5 - 0.5 && b.x + b.w <= 5 + g.w + 0.5 && b.y + b.h <= 5 + g.h + 0.5, JSON.stringify({ b, w: g.w, h: g.h }));
 });
 
-for (const tpl of ['credit', 'business']) {
+for (const tpl of Object.keys(TEMPLATES).filter((k) => k !== 'blank')) {
   test(`${tpl} template exports SVG and DXF`, () => {
     const p = newProject(tpl);
     for (const side of ['front', 'back']) {
@@ -92,4 +92,42 @@ test('tracer smoothing straightens a diagonal staircase', () => {
   const smooth = traceMask(mask, N, N, { smooth: 0.75 })[0].length;
   assert.ok(raw > 40, `raw ${raw}`);
   assert.ok(smooth <= 6, `smooth ${smooth}`);
+});
+
+test('template content stays on the card', () => {
+  for (const key of Object.keys(TEMPLATES)) {
+    const p = newProject(key);
+    for (const side of ['front', 'back']) {
+      for (const el of p.sides[side]) {
+        const b = pathBounds(elementGeometry(el, ctx).cmds);
+        if (!b.w) continue;
+        assert.ok(b.x >= 0.5 && b.y >= 0.5 && b.x + b.w <= p.card.w - 0.5 && b.y + b.h <= p.card.h - 0.5, `${key}/${side}/${el.name} ${JSON.stringify(b)}`);
+      }
+    }
+  }
+});
+
+test('centre-anchored text stays centred when edited', () => {
+  const el = makeText({ anchor: 'center', x: 42.8, text: 'AB' });
+  for (const text of ['AB', 'A MUCH LONGER NAME']) {
+    el.text = text;
+    const b = pathBounds(elementGeometry(el, ctx).cmds);
+    assert.ok(Math.abs(b.x + b.w / 2 - 42.8) < 0.3, `${text}: ${b.x + b.w / 2}`);
+  }
+});
+
+test('bulk sheet repeats the card in a grid', () => {
+  const p = newProject('credit');
+  const sheet = { count: 6, cols: 3, gap: 3 };
+  const l = sheetLayout(p.card, sheet);
+  assert.equal(l.rows, 2);
+  assert.ok(Math.abs(l.w - (3 * 85.6 + 6)) < 1e-9 && Math.abs(l.h - (2 * 53.98 + 3)) < 1e-9);
+  const svg = toSVG(p, 'front', ctx, { sheet });
+  assert.equal((svg.match(/id="card-outline-c\d"/g) || []).length, 6);
+  assert.match(svg, /viewBox="0 0 262.8 110.96"/);
+  const single = toDXF(p, 'front', ctx).dxf.match(/POLYLINE/g).length;
+  const bulk = toDXF(p, 'front', ctx, { sheet }).dxf;
+  assert.equal(bulk.match(/POLYLINE/g).length, single * 6);
+  assert.match(bulk, /\$EXTMAX\r\n10\r\n262.8\r\n20\r\n110.96/);
+  assert.equal((toRasterSVG(p, 'front', ctx, { sheet, layers: ['cut'] }).match(/<path/g) || []).length, 6 + 0 * single);
 });

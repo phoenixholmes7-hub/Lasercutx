@@ -21,8 +21,10 @@ import {
   makeImage,
   makeVector,
   makeErase,
+  makeChipArt,
+  makeContactless,
 } from './model.js';
-import { toSVG, toDXF, toRasterSVG } from './exporters.js';
+import { toSVG, toDXF, toRasterSVG, sheetLayout } from './exporters.js';
 import * as platform from './platform.js';
 import { loadImage, preloadImages, bakedImageSrc, thresholdCanvas, traceImage, svgToPng, importSvg } from './imaging.js';
 
@@ -411,6 +413,16 @@ function renderProps() {
     field(r2, 'Letter spacing (mm)', el.letterSpacing, setter(el, 'letterSpacing'), { type: 'number', step: 0.1 });
     field(r2, 'Line height', el.lineHeight, setter(el, 'lineHeight'), { type: 'number', step: 0.05, min: 0.5 });
     field(p, 'Align', el.align, setter(el, 'align'), { options: { left: 'Left', center: 'Center', right: 'Right' } });
+    field(p, 'Keep centred when text changes (X = centre)', el.anchor === 'center', (v) => {
+      checkpoint();
+      const g = elementGeometry(el, ctx);
+      // convert X so the text does not jump
+      if (v && el.anchor !== 'center') el.x = round(el.x + g.w / 2, 3);
+      if (!v && el.anchor === 'center') el.x = round(el.x - g.w / 2, 3);
+      el.anchor = v ? 'center' : undefined;
+      refresh();
+      renderProps();
+    }, { type: 'checkbox' });
   }
 
   if (el.type === 'qr') {
@@ -614,6 +626,10 @@ async function onAdd(kind) {
     }
     case 'chip':
       return addElement(makeChip());
+    case 'chipart':
+      return addElement(makeChipArt());
+    case 'contactless':
+      return addElement(makeContactless());
     case 'qr': {
       const el = makeQr();
       el.x = round(c.w - el.w - 6);
@@ -753,7 +769,7 @@ function center(axis) {
   if (!el) return;
   checkpoint();
   const g = elementGeometry(el, ctx);
-  if (axis === 'x') el.x = round((card().w - g.w) / 2, 3);
+  if (axis === 'x') el.x = el.anchor === 'center' ? round(card().w / 2, 3) : round((card().w - g.w) / 2, 3);
   else el.y = round((card().h - g.h) / 2, 3);
   refresh();
   renderProps();
@@ -835,16 +851,19 @@ async function openProject() {
 function showNewDialog() {
   const dlg = $('#dlgNew');
   const list = $('#templateList');
-  const desc = {
-    blank: 'Empty card – start from scratch.',
-    credit: 'Chip pocket, card number, expiry and name – all editable in Quick Fill.',
-    business: 'Name, title, contact details and a QR code.',
-  };
   list.innerHTML = '';
+  let group = '';
   for (const [key, t] of Object.entries(TEMPLATES)) {
+    if (t.group && t.group !== group) {
+      group = t.group;
+      const h = document.createElement('div');
+      h.className = 'tgroup';
+      h.textContent = group;
+      list.appendChild(h);
+    }
     const b = document.createElement('button');
     b.type = 'button';
-    b.innerHTML = `<b>${t.label}</b><span>${desc[key] || ''}</span>`;
+    b.innerHTML = `<b>${t.label}</b><span>${t.desc || ''}</span>`;
     b.onclick = () => {
       checkpoint();
       state.project = newProject(key);
@@ -875,10 +894,27 @@ function showNewDialog() {
 
 // ---------- export ----------
 
-function showExportDialog() {
+function bulkSheet(form) {
+  if (!form.bulk.checked) return null;
+  const count = Math.max(2, Math.min(100, parseInt(form.copies.value, 10) || 6));
+  const cols = Math.max(1, Math.min(count, parseInt(form.cols.value, 10) || 3));
+  const gap = Math.max(0, parseFloat(form.gap.value) || 0);
+  return { count, cols, gap };
+}
+
+function showExportDialog(opts = {}) {
   const dlg = $('#dlgExport');
   const form = $('#exportForm');
+  form.bulk.checked = !!opts.bulk;
   const update = () => {
+    const sheet = bulkSheet(form);
+    form.querySelector('.bulk').classList.toggle('off', !sheet);
+    if (sheet) {
+      const l = sheetLayout(card(), sheet);
+      $('#bulkNote').textContent = `${sheet.count} cards in ${l.cols} × ${l.rows} – sheet ${round(l.w, 1)} × ${round(l.h, 1)} mm. Make sure it fits your laser bed.`;
+    } else {
+      $('#bulkNote').textContent = '';
+    }
     const fmt = form.format.value;
     form.querySelector('.png-only').style.display = fmt === 'png' ? '' : 'none';
     const notes = {
@@ -889,6 +925,7 @@ function showExportDialog() {
     $('#exportNote').textContent = notes[fmt];
   };
   form.format.onchange = update;
+  for (const n of ['bulk', 'copies', 'cols', 'gap']) form[n].oninput = update;
   update();
   dlg.showModal();
 }
@@ -901,6 +938,8 @@ async function doExport() {
   const sideChoice = form.side.value;
   const sides = sideChoice === 'both' ? ['front', 'back'] : [sideChoice === 'current' ? state.side : sideChoice];
   const mirror = form.mirror.checked;
+  const sheet = bulkSheet(form);
+  const layout = sheetLayout(card(), sheet);
   await preloadImages(state.project);
 
   const files = [];
@@ -908,17 +947,20 @@ async function doExport() {
   for (const side of sides) {
     const sideEls = state.project.sides[side];
     const imageSrc = (el) => bakedImageSrc(el, sideEls);
-    const base = `card-${side}${mirror ? '-mirrored' : ''}`;
+    const base = `card-${side}${mirror ? '-mirrored' : ''}${sheet ? `-x${sheet.count}` : ''}`;
     if (fmt === 'svg') {
-      files.push({ name: `${base}.svg`, data: toSVG(state.project, side, ctx, { layers, mirror, imageSrc }) });
+      files.push({ name: `${base}.svg`, data: toSVG(state.project, side, ctx, { layers, mirror, imageSrc, sheet }) });
     } else if (fmt === 'dxf') {
-      const r = toDXF(state.project, side, ctx, { layers, mirror });
+      const r = toDXF(state.project, side, ctx, { layers, mirror, sheet });
       skipped.push(...r.skipped);
       files.push({ name: `${base}.dxf`, data: r.dxf });
     } else {
-      const dpi = parseInt(form.dpi.value, 10);
-      const svg = toRasterSVG(state.project, side, ctx, { layers, mirror, invert: form.invert.checked, imageSrc });
-      files.push({ name: `${base}-${dpi}dpi.png`, data: await svgToPng(svg, card().w, card().h, dpi) });
+      // keep big bulk sheets within what a browser canvas can hold
+      const maxDpi = Math.floor((16000 / Math.max(layout.w, layout.h)) * 25.4);
+      const dpi = Math.min(parseInt(form.dpi.value, 10), maxDpi);
+      if (dpi < parseInt(form.dpi.value, 10)) toast(`Sheet is large – PNG resolution lowered to ${dpi} DPI.`);
+      const svg = toRasterSVG(state.project, side, ctx, { layers, mirror, invert: form.invert.checked, imageSrc, sheet });
+      files.push({ name: `${base}-${dpi}dpi.png`, data: await svgToPng(svg, layout.w, layout.h, dpi) });
     }
   }
   const filter = {
@@ -1039,7 +1081,7 @@ function onKey(evt) {
   }
   if (mod && evt.key.toLowerCase() === 'e') {
     evt.preventDefault();
-    return showExportDialog();
+    return showExportDialog(evt.shiftKey ? { bulk: true } : {});
   }
   if (typing) return;
   if (mod && evt.key.toLowerCase() === 'z') {
@@ -1084,7 +1126,8 @@ function wire() {
   $('#btnZoomIn').onclick = () => zoomBy(1.25);
   $('#btnZoomOut').onclick = () => zoomBy(0.8);
   $('#btnZoomFit').onclick = fitZoom;
-  $('#btnExport').onclick = showExportDialog;
+  $('#btnExport').onclick = () => showExportDialog();
+  $('#btnBulk').onclick = () => showExportDialog({ bulk: true });
   $('#exportForm').addEventListener('submit', (e) => {
     if (e.submitter?.value === 'ok') {
       doExport().catch((err) => {
@@ -1134,7 +1177,7 @@ function wire() {
   });
   if (window.lcx?.onMenu) {
     window.lcx.onMenu((cmd) => {
-      const map = { new: showNewDialog, open: openProject, save: saveProject, export: showExportDialog, undo, redo };
+      const map = { new: showNewDialog, open: openProject, save: saveProject, export: () => showExportDialog(), bulk: () => showExportDialog({ bulk: true }), undo, redo };
       map[cmd]?.();
     });
   }

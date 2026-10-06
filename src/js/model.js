@@ -9,6 +9,7 @@ import {
   ellipsePath,
   transformPath,
   fromOpentype,
+  arcToCubics,
 } from './geometry.js';
 
 export const PT_TO_MM = 25.4 / 72;
@@ -122,10 +123,100 @@ function pick(o, keys) {
   return r;
 }
 
+// ---------- decorative shapes used by templates ----------
+
+// A vector element whose `cmds` are already in local mm (0..w, 0..h).
+function shape(name, op, x, y, w, h, cmds, props = {}) {
+  return makeVector({ name, op, x, y, w, h, paths: cmds, bounds: { x: 0, y: 0, w, h }, ...props });
+}
+
+const line = (x1, y1, x2, y2) => [
+  { type: 'M', x: x1, y: y1 },
+  { type: 'L', x: x2, y: y2 },
+];
+
+// Chip contact pattern drawn as engraved lines.
+export function makeChipArt(props = {}) {
+  const w = 11.6;
+  const h = 9.2;
+  const a = w * 0.34;
+  const b = w * 0.66;
+  const cmds = [
+    ...rectPath(0, 0, w, h, 1.5),
+    ...rectPath(a, h * 0.22, b - a, h * 0.56, 0.8),
+    ...line(a, 0, a, h * 0.22),
+    ...line(b, 0, b, h * 0.22),
+    ...line(a, h * 0.78, a, h),
+    ...line(b, h * 0.78, b, h),
+    ...line(0, h / 3, a, h / 3),
+    ...line(0, (2 * h) / 3, a, (2 * h) / 3),
+    ...line(b, h / 3, w, h / 3),
+    ...line(b, (2 * h) / 3, w, (2 * h) / 3),
+    ...line(w / 2, 0, w / 2, h * 0.22),
+    ...line(w / 2, h * 0.78, w / 2, h),
+  ];
+  return shape('Chip (contact art)', 'score', 9, 17, w, h, cmds, props);
+}
+
+// Contactless "waves" symbol.
+export function makeContactless(props = {}) {
+  const w = 5.2;
+  const h = 6.4;
+  const cmds = [];
+  const sweep = (40 * Math.PI) / 180;
+  for (let i = 0; i < 4; i++) {
+    const r = 1.4 + i * 1.25;
+    const x1 = r * Math.cos(-sweep);
+    const y1 = h / 2 + r * Math.sin(-sweep);
+    const x2 = r * Math.cos(sweep);
+    const y2 = h / 2 + r * Math.sin(sweep);
+    cmds.push({ type: 'M', x: x1, y: y1 }, ...arcToCubics(x1, y1, r, r, 0, 0, 1, x2, y2));
+  }
+  return shape('Contactless symbol', 'score', 74, 18, w, h, cmds, props);
+}
+
+// Ribbon banner with notched ends.
+function ribbon(name, x, y, w, h) {
+  const n = Math.min(1.4, w / 6);
+  const cmds = [
+    { type: 'M', x: 0, y: 0 },
+    { type: 'L', x: w, y: 0 },
+    { type: 'L', x: w - n, y: h / 2 },
+    { type: 'L', x: w, y: h },
+    { type: 'L', x: 0, y: h },
+    { type: 'L', x: n, y: h / 2 },
+    { type: 'Z' },
+  ];
+  return shape(name, 'score', x, y, w, h, cmds);
+}
+
+// Fine double frame just inside the card edge.
+function doubleBorder(card, inset = 1.8, gap = 0.7) {
+  return [
+    makeRect({ name: 'Border (outer)', op: 'score', x: inset, y: inset, w: card.w - 2 * inset, h: card.h - 2 * inset, radius: Math.max(0.5, card.radius - inset) }),
+    makeRect({
+      name: 'Border (inner)',
+      op: 'score',
+      x: inset + gap,
+      y: inset + gap,
+      w: card.w - 2 * (inset + gap),
+      h: card.h - 2 * (inset + gap),
+      radius: Math.max(0.3, card.radius - inset - gap),
+    }),
+  ];
+}
+
+// Centred text helper (x is the centre line).
+const ctext = (props) => makeText({ anchor: 'center', align: 'center', ...props });
+
 export const TEMPLATES = {
-  blank: { label: 'Blank card', build() {} },
+  blank: { label: 'Blank card', desc: 'Empty card – start from scratch.', build() {} },
+
+  // ----- credit cards -----
   credit: {
-    label: 'Metal credit card (front + back)',
+    group: 'Credit cards',
+    label: 'Classic metal credit card',
+    desc: 'Chip pocket, card number, expiry, name and network circles. Front + back.',
     build(p) {
       p.card.material = 'black';
       p.sides.front = [
@@ -146,8 +237,105 @@ export const TEMPLATES = {
       ];
     },
   },
+  centurion: {
+    group: 'Credit cards',
+    label: 'Black charge card (centurion style)',
+    desc: 'Amex-inspired: double border, centred issuer name, chip, oval emblem, “Member since” ribbon. Add your own emblem image in the oval.',
+    build(p) {
+      const c = p.card;
+      c.material = 'black';
+      const cx = c.w / 2;
+      p.sides.front = [
+        ...doubleBorder(c),
+        ctext({ name: 'Issuer name', text: 'YOUR BANK', font: 'montserrat', weight: 700, sizePt: 9.5, letterSpacing: 0.5, x: cx, y: 5 }),
+        makeChipArt({ x: 10.5, y: 16 }),
+        makeEllipse({ name: 'Emblem oval (outer)', op: 'score', x: cx - 9.6, y: 13, w: 19.2, h: 24 }),
+        makeEllipse({ name: 'Emblem oval (inner)', op: 'score', x: cx - 8.7, y: 13.9, w: 17.4, h: 22.2 }),
+        ctext({ name: 'Emblem hint', op: 'none', text: 'Add your\nemblem\n(Image or\nSVG logo)', font: 'roboto', sizePt: 4, lineHeight: 1.3, x: cx, y: 19.2 }),
+        ribbon('Member since ribbon', 59.3, 29.2, 17.4, 3.4),
+        ctext({ name: 'Member since label', text: 'MEMBER SINCE', font: 'montserrat', weight: 700, sizePt: 3.6, letterSpacing: 0.25, x: 68, y: 29.9 }),
+        ctext({ name: 'Member since year', format: 'digits', text: '24', font: 'roboto', sizePt: 8, x: 68, y: 33.4 }),
+        makeText({ name: 'Card number', format: 'cardnumber', text: '3700 000000 00000', font: 'mono', sizePt: 9.5, letterSpacing: 0.25, x: 9.5, y: 38.5 }),
+        makeText({ name: 'Card holder', format: 'upper', text: 'CARD HOLDER', font: 'roboto', sizePt: 8, letterSpacing: 0.3, x: 9.5, y: 44.6 }),
+        makeText({ name: 'Fine print', text: '© YOUR BANK', font: 'roboto', weight: 700, sizePt: 3, x: 66, y: 48.2 }),
+      ];
+      p.sides.back = [
+        ...doubleBorder(c),
+        makeRect({ name: 'Signature panel', op: 'score', x: 7, y: 9, w: 46, h: 8, radius: 0.6 }),
+        makeText({ name: 'Security code', format: 'digits', text: '1234', font: 'mono', sizePt: 8.5, x: 56, y: 10.6 }),
+        makeText({
+          name: 'Fine print',
+          text: 'This card remains the property of Your Bank and must be returned on request.\nIf found, please call +1 800 000 0000 or return to any branch.',
+          font: 'roboto',
+          sizePt: 3.6,
+          lineHeight: 1.5,
+          x: 7,
+          y: 22,
+        }),
+        ctext({ name: 'Issuer name', text: 'YOUR BANK', font: 'montserrat', weight: 700, sizePt: 7, letterSpacing: 0.5, x: cx, y: 42 }),
+      ];
+    },
+  },
+  minimal: {
+    group: 'Credit cards',
+    label: 'Minimal brushed steel',
+    desc: 'Clean front with chip and contactless symbol; number, expiry and CVV on the back.',
+    build(p) {
+      p.card.material = 'silver';
+      p.sides.front = [
+        makeText({ name: 'Bank name', text: 'NORTH', font: 'orbitron', weight: 700, sizePt: 9, letterSpacing: 1.2, x: 7, y: 6 }),
+        makeContactless({ x: 74, y: 5.2 }),
+        makeChip({ x: 7.5, y: 19 }),
+        makeText({ name: 'Card holder', format: 'upper', text: 'JANE A. DOE', font: 'montserrat', sizePt: 7, letterSpacing: 0.6, x: 7, y: 45 }),
+        makeEllipse({ name: 'Network circle 1', op: 'engrave', x: 66.5, y: 42, w: 8, h: 8 }),
+        makeEllipse({ name: 'Network circle 2', op: 'score', x: 71.5, y: 42, w: 8, h: 8 }),
+      ];
+      p.sides.back = [
+        makeText({ name: 'Card number', format: 'cardnumber', text: '4000 1234 5678 9010', font: 'mono', sizePt: 10, letterSpacing: 0.3, x: 7, y: 9 }),
+        makeText({ name: 'Expiry label', text: 'EXP', font: 'montserrat', weight: 700, sizePt: 4, x: 7, y: 17.5 }),
+        makeText({ name: 'Expiry', format: 'expiry', text: '12/30', font: 'mono', sizePt: 8, x: 7, y: 20.5 }),
+        makeText({ name: 'CVV label', text: 'CVV', font: 'montserrat', weight: 700, sizePt: 4, x: 24, y: 17.5 }),
+        makeText({ name: 'CVV', format: 'digits', text: '123', font: 'mono', sizePt: 8, x: 24, y: 20.5 }),
+        makeText({ name: 'Fine print', text: 'Issued by North Bank. Customer service +1 800 000 0000', font: 'roboto', sizePt: 3.8, x: 7, y: 44 }),
+        makeText({ name: 'Bank name', text: 'NORTH', font: 'orbitron', weight: 700, sizePt: 7, letterSpacing: 1, x: 66, y: 43.5 }),
+      ];
+    },
+  },
+  gold: {
+    group: 'Credit cards',
+    label: 'Gold premium',
+    desc: 'Serif bank name, tier label, chip art, contactless, single fine border.',
+    build(p) {
+      const c = p.card;
+      c.material = 'gold';
+      p.sides.front = [
+        makeRect({ name: 'Border', op: 'score', x: 2.2, y: 2.2, w: c.w - 4.4, h: c.h - 4.4, radius: 1.6 }),
+        makeText({ name: 'Bank name', text: 'Crown & Co.', font: 'playfair', weight: 700, sizePt: 11, x: 7, y: 5.5 }),
+        makeText({ name: 'Tier', text: 'PREMIER', font: 'montserrat', weight: 700, sizePt: 5, letterSpacing: 1.2, x: 61, y: 7.6 }),
+        makeChipArt({ x: 8, y: 17.5 }),
+        makeContactless({ x: 22.5, y: 18.9 }),
+        makeText({ name: 'Card number', format: 'cardnumber', text: '5500 0000 0000 0004', font: 'orbitron', sizePt: 10.5, letterSpacing: 0.4, x: 7, y: 31 }),
+        makeText({ name: 'Good thru label', text: 'GOOD\nTHRU', font: 'roboto', weight: 700, sizePt: 3.2, lineHeight: 1.1, x: 33, y: 38.6 }),
+        makeText({ name: 'Expiry', format: 'expiry', text: '12/30', font: 'mono', sizePt: 7.5, x: 39, y: 38.4 }),
+        makeText({ name: 'Card holder', format: 'upper', text: 'JANE A. DOE', font: 'roboto', sizePt: 8, letterSpacing: 0.5, x: 7, y: 44.5 }),
+        makeEllipse({ name: 'Network circle 1', op: 'score', x: 64, y: 40, w: 10, h: 10 }),
+        makeEllipse({ name: 'Network circle 2', op: 'score', x: 70, y: 40, w: 10, h: 10 }),
+      ];
+      p.sides.back = [
+        makeRect({ name: 'Border', op: 'score', x: 2.2, y: 2.2, w: c.w - 4.4, h: c.h - 4.4, radius: 1.6 }),
+        makeRect({ name: 'Signature panel', op: 'score', x: 7, y: 10, w: 48, h: 8, radius: 0.6 }),
+        makeText({ name: 'CVV', format: 'digits', text: '123', font: 'mono', sizePt: 8.5, x: 59, y: 11.6 }),
+        makeText({ name: 'Fine print', text: 'Crown & Co. Premier card. If found, please call +1 800 000 0000.', font: 'roboto', sizePt: 3.8, x: 7, y: 25 }),
+        ctext({ name: 'Bank name', text: 'Crown & Co.', font: 'playfair', weight: 700, sizePt: 9, x: c.w / 2, y: 40 }),
+      ];
+    },
+  },
+
+  // ----- business cards -----
   business: {
-    label: 'Metal business card',
+    group: 'Business cards',
+    label: 'Classic business card',
+    desc: 'Name, title, contact details and a QR code.',
     build(p) {
       p.card.material = 'silver';
       p.sides.front = [
@@ -164,10 +352,82 @@ export const TEMPLATES = {
           y: 31,
         }),
         makeQr({ name: 'QR code', data: 'https://www.company.com', x: 60, y: 24, w: 19, h: 19 }),
-        makeText({ name: 'QR caption', text: 'SCAN ME', font: 'montserrat', weight: 700, sizePt: 4.5, letterSpacing: 0.6, x: 63.2, y: 45 }),
+        ctext({ name: 'QR caption', text: 'SCAN ME', font: 'montserrat', weight: 700, sizePt: 4.5, letterSpacing: 0.6, x: 69.5, y: 45 }),
       ];
       p.sides.back = [
-        makeText({ name: 'Company', text: 'COMPANY', font: 'montserrat', weight: 700, sizePt: 18, letterSpacing: 2, align: 'center', x: 21, y: 21 }),
+        ctext({ name: 'Company', text: 'COMPANY', font: 'montserrat', weight: 700, sizePt: 18, letterSpacing: 2, x: p.card.w / 2, y: 21 }),
+      ];
+    },
+  },
+  executive: {
+    group: 'Business cards',
+    label: 'Executive black (centred)',
+    desc: 'Monogram, centred name and title, contact line; QR code on the back.',
+    build(p) {
+      const c = p.card;
+      c.material = 'black';
+      const cx = c.w / 2;
+      p.sides.front = [
+        makeEllipse({ name: 'Monogram circle', op: 'score', x: cx - 6.5, y: 6, w: 13, h: 13 }),
+        ctext({ name: 'Monogram', format: 'upper', text: 'AM', font: 'playfair', weight: 700, sizePt: 13, x: cx, y: 8.2 }),
+        ctext({ name: 'Name', text: 'Alex Morgan', font: 'playfair', weight: 700, sizePt: 14, x: cx, y: 22.5 }),
+        ctext({ name: 'Title', format: 'upper', text: 'MANAGING DIRECTOR', font: 'montserrat', sizePt: 5.5, letterSpacing: 1, x: cx, y: 31 }),
+        makeRect({ name: 'Divider', op: 'engrave', x: cx - 8, y: 36, w: 16, h: 0.3 }),
+        ctext({ name: 'Contact', text: '+1 555 010 2030  ·  alex@company.com\nwww.company.com', font: 'montserrat', sizePt: 5.5, lineHeight: 1.7, x: cx, y: 39.5 }),
+      ];
+      p.sides.back = [
+        makeQr({ name: 'QR code', data: 'https://www.company.com', x: cx - 11, y: 9, w: 22, h: 22 }),
+        ctext({ name: 'QR caption', format: 'upper', text: 'CONNECT WITH ME', font: 'montserrat', weight: 700, sizePt: 5, letterSpacing: 1, x: cx, y: 35 }),
+        ctext({ name: 'Company', format: 'upper', text: 'COMPANY', font: 'montserrat', sizePt: 6, letterSpacing: 2, x: cx, y: 43 }),
+      ];
+    },
+  },
+  modern: {
+    group: 'Business cards',
+    label: 'Modern split + key-ring hole',
+    desc: 'Name on the left, contact on the right, divider line and a cut-out key-ring hole.',
+    build(p) {
+      const c = p.card;
+      c.material = 'blue';
+      p.sides.front = [
+        makeText({ name: 'Name', text: 'ALEX\nMORGAN', font: 'montserrat', weight: 700, sizePt: 12, lineHeight: 1.1, letterSpacing: 0.4, x: 7, y: 12 }),
+        makeText({ name: 'Title', text: 'Product Designer', font: 'montserrat', sizePt: 6, x: 7, y: 26 }),
+        makeRect({ name: 'Divider', op: 'engrave', x: 44, y: 10, w: 0.35, h: 34 }),
+        makeText({
+          name: 'Contact',
+          text: 'T  +1 555 010 2030\nE  alex@company.com\nW  company.com\nA  12 Main St, City',
+          font: 'montserrat',
+          sizePt: 5.8,
+          lineHeight: 1.85,
+          x: 48,
+          y: 13,
+        }),
+        makeEllipse({ name: 'Key-ring hole', op: 'cut', x: c.w - 8.5, y: c.h - 8.5, w: 4, h: 4 }),
+      ];
+      p.sides.back = [
+        ctext({ name: 'Company', format: 'upper', text: 'COMPANY', font: 'orbitron', weight: 700, sizePt: 16, letterSpacing: 1.5, x: c.w / 2, y: 18 }),
+        ctext({ name: 'Tagline', text: 'Design · Build · Ship', font: 'montserrat', sizePt: 6, letterSpacing: 0.6, x: c.w / 2, y: 30 }),
+      ];
+    },
+  },
+  signature: {
+    group: 'Business cards',
+    label: 'Signature script + QR',
+    desc: 'Elegant script name on the front, large QR code on the back.',
+    build(p) {
+      const c = p.card;
+      c.material = 'rose';
+      const cx = c.w / 2;
+      p.sides.front = [
+        ...doubleBorder(c, 2.5, 0.6),
+        ctext({ name: 'Name', text: 'Alex Morgan', font: 'greatvibes', sizePt: 24, x: cx, y: 12 }),
+        ctext({ name: 'Title', format: 'upper', text: 'PHOTOGRAPHER', font: 'montserrat', sizePt: 5.5, letterSpacing: 1.5, x: cx, y: 29 }),
+        ctext({ name: 'Contact', text: '+1 555 010 2030  ·  alex@studio.com', font: 'montserrat', sizePt: 5.5, x: cx, y: 40 }),
+      ];
+      p.sides.back = [
+        ...doubleBorder(c, 2.5, 0.6),
+        makeQr({ name: 'QR code', data: 'https://www.studio.com', x: cx - 13, y: 7, w: 26, h: 26 }),
+        ctext({ name: 'QR caption', text: 'www.studio.com', font: 'montserrat', sizePt: 6, letterSpacing: 0.4, x: cx, y: 38 }),
       ];
     },
   },
@@ -328,6 +588,8 @@ export function elementGeometry(el, ctx) {
     default:
       break;
   }
-  const matrix = elementMatrix(el, w, h);
+  // anchor 'center': x is the horizontal centre, so edited text stays centred
+  const left = el.anchor === 'center' ? el.x - w / 2 : el.x;
+  const matrix = elementMatrix(left === el.x ? el : { ...el, x: left }, w, h);
   return { cmds: transformPath(local, matrix), w, h, matrix, raster, fillRule };
 }

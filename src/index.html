@@ -30,6 +30,7 @@
       <button id="btnZoomFit" title="Fit card to window">Fit</button>
     </div>
     <div class="spacer"></div>
+    <button id="btnBulk" title="Export several copies of this card on one laser job">Bulk ×6…</button>
     <button id="btnExport" class="primary">Export for laser…</button>
   </header>
 
@@ -46,6 +47,8 @@
           <button data-add="rect">▭ Rectangle</button>
           <button data-add="ellipse">◯ Circle</button>
           <button data-add="chip">▣ Chip pocket</button>
+          <button data-add="chipart">◫ Chip art</button>
+          <button data-add="contactless">⦚ Contactless</button>
           <button data-add="qr">▦ QR code</button>
           <button data-add="hole">⊙ Key-ring hole</button>
           <button data-add="image">🖼 Image</button>
@@ -104,6 +107,15 @@
         <label class="check"><input type="checkbox" name="cut" checked /> <span class="sw" style="background:#f00"></span> Cut (incl. card outline)</label>
       </fieldset>
       <label class="check"><input type="checkbox" name="mirror" /> Mirror horizontally (for back-side / flipped jigs)</label>
+      <fieldset class="bulk">
+        <legend><label class="check"><input type="checkbox" name="bulk" /> Bulk job – repeat the card on one sheet</label></legend>
+        <div class="row bulk-opts">
+          <label>Copies <input type="number" name="copies" value="6" min="2" max="100" step="1" /></label>
+          <label>Columns <input type="number" name="cols" value="3" min="1" max="20" step="1" /></label>
+          <label>Gap (mm) <input type="number" name="gap" value="3" min="0" max="50" step="0.5" /></label>
+        </div>
+        <p class="note" id="bulkNote"></p>
+      </fieldset>
       <div class="png-only">
         <label>Resolution (DPI)
           <select name="dpi">

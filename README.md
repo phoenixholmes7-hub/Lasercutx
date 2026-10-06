@@ -7,7 +7,12 @@ A simple desktop app (Windows & macOS) for designing **metal business cards** an
 
 ## What it does
 
-- **Templates** – metal credit card (front + back) and metal business card, or start blank.
+- **Templates** (all front + back, everything editable):
+  - Credit cards: *Classic metal*, *Black charge card (centurion style, Amex-inspired)*, *Minimal brushed steel*, *Gold premium*
+  - Business cards: *Classic*, *Executive black (centred)*, *Modern split + key-ring hole*, *Signature script + QR*
+  - or blank, or start from an image of a card.
+
+  ![All templates, front and back](docs/templates.png)
 - **Quick Fill** – every name, number and QR link is listed in a simple form on the left.
   Just type: card numbers group themselves (`4000 1234 5678 9010`, Amex `3782 822463 10005`),
   expiry becomes `MM/YY`, the card-holder name becomes UPPERCASE.
@@ -27,6 +32,9 @@ A simple desktop app (Windows & macOS) for designing **metal business cards** an
   | **PNG** | Any raster engraving | 300–1200 DPI, DPI stored in the file so it imports at the right size. Optional invert. |
 
   Options: front, back or both sides, choose layers, **mirror** for back-side jigs, include/exclude the red card outline.
+- **Bulk ×6** – one click lays out 6 copies of the card (3 × 2 grid, 3 mm gap) in a single SVG/DXF/PNG
+  so the whole batch runs as one laser job. Copies, columns and gap are adjustable; the dialog shows the
+  sheet size so you can check it fits your bed. Shortcut: Ctrl/Cmd + Shift + E.
 - Projects save as `.lcx` files (fonts and images included, so they open anywhere).
 
 ## Download / install
@@ -63,6 +71,9 @@ npm run dist:mac   # build macOS .dmg     (run on a Mac)
 - The **chip pocket** position follows ISO 7816-2 approximately – check it against your chip module before cutting.
 - Keep text inside the dashed **safe area** (2.5 mm from the edge).
 - Use **Mirror** when engraving the back of a card in a flipped fixture.
+- Centred texts (issuer names, names on the centred templates) stay centred as you edit them – toggle
+  *Keep centred* in the text properties.
+- The centurion-style template has an empty oval: drop your own emblem in with **Image** or **SVG logo**.
 
 ## Project layout
 

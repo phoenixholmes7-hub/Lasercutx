@@ -120,3 +120,11 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
   opacity: 0; transition: all 0.2s; pointer-events: none; max-width: 80vw;
 }
 .toast.show { opacity: 1; transform: translateX(-50%); }
+
+dialog .bulk legend label { margin: 0; }
+dialog .bulk .row label { margin-bottom: 0; }
+dialog .bulk-opts input { margin-top: 3px; }
+dialog .bulk.off .bulk-opts { opacity: 0.4; pointer-events: none; }
+#dlgNew { width: 520px; }
+.templates { max-height: 64vh; overflow-y: auto; padding-right: 4px; }
+.templates .tgroup { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--accent); margin: 6px 0 0; }

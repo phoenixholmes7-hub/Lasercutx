@@ -50,6 +50,7 @@ function buildMenu() {
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: send('save') },
         { type: 'separator' },
         { label: 'Export for laser…', accelerator: 'CmdOrCtrl+E', click: send('export') },
+        { label: 'Bulk export (×6 on one sheet)…', accelerator: 'CmdOrCtrl+Shift+E', click: send('bulk') },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
