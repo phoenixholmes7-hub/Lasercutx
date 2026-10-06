@@ -1,13 +1,14 @@
 name: Build desktop apps
 
-# Builds the Windows installer/portable .exe and the macOS .dmg.
-# Run it from the Actions tab ("Run workflow"), or push a tag like v1.0.0
-# to also attach the files to a GitHub Release.
+# Builds the Apple Silicon (M1–M4) macOS app and the Windows 11 x64 installer.
+# Runs on every push, from the Actions tab ("Run workflow"), and on tags
+# like v1.0.0 (which also publish a GitHub Release with the files).
 on:
-  workflow_dispatch:
   push:
+    branches: ['**']
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -29,7 +30,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: macos-latest # Apple Silicon runner
+            name: macOS-AppleSilicon
+            args: --mac --arm64
+          - os: windows-latest
+            name: Windows11-x64
+            args: --win --x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,14 +45,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm test
       - name: Build
-        run: npx electron-builder --publish never
+        run: npx electron-builder ${{ matrix.args }} --publish never
         env:
-          # no code-signing certificate configured; apps are unsigned
+          # no Apple/Windows code-signing certificate: the Mac app is ad-hoc signed
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: LaserCutX-${{ runner.os }}
+          name: LaserCutX-${{ matrix.name }}
           path: |
             dist/*.exe
             dist/*.dmg

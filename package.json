@@ -13,8 +13,8 @@
     "test": "node --test tests/*.test.mjs",
     "vendor": "node scripts/copy-vendor.js",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac"
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --arm64"
   },
   "devDependencies": {
     "@fontsource/great-vibes": "^5.3.0",
@@ -69,28 +69,33 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}-win11-x64.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.exe"
+      "artifactName": "${productName}-${version}-win11-x64-portable.${ext}"
     },
     "mac": {
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "universal"
+            "arm64"
           ]
         },
         {
           "target": "zip",
           "arch": [
-            "universal"
+            "arm64"
           ]
         }
       ],
       "category": "public.app-category.graphics-design",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
     },
     "linux": {
       "target": [

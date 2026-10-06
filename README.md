@@ -102,15 +102,16 @@ a running laser unattended.
 
 Ready-made apps are built by GitHub Actions:
 
-1. Open the repository's **Actions** tab → **Build desktop apps** → **Run workflow**
-   (or push a tag such as `v1.0.0` to also create a Release).
-2. Download the artifact:
-   - **Windows:** `LaserCutX Setup 1.0.0.exe` (installer) or `LaserCutX-1.0.0-portable.exe` (no install).
-   - **macOS:** `LaserCutX-1.0.0-universal.dmg` (Intel + Apple Silicon).
+Every push builds the apps automatically (repository **Actions** tab → **Build desktop apps** → latest run →
+*Artifacts*). Push a tag such as `v1.0.0` to also publish them on a GitHub Release.
 
-The apps are not code-signed, so the first launch shows a warning:
+- **Apple Silicon Mac (M1–M4):** `LaserCutX-1.0.0-mac-arm64.dmg` (or `.zip`)
+- **Windows 11 (x64):** `LaserCutX-Setup-1.0.0-win11-x64.exe` (installer) or `LaserCutX-1.0.0-win11-x64-portable.exe` (no install)
+
+The apps are not signed with a paid Apple/Microsoft certificate, so the first launch shows a warning:
 - **Windows SmartScreen:** click *More info → Run anyway*.
-- **macOS:** right-click the app → *Open* → *Open* (or System Settings → Privacy & Security → *Open Anyway*).
+- **macOS:** open the DMG and drag LaserCutX to Applications, then right-click it → *Open* → *Open*.
+  If macOS says the app “is damaged”, run this once in Terminal: `xattr -cr /Applications/LaserCutX.app`
 
 ## Run from source
 
