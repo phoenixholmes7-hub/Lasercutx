@@ -12,6 +12,7 @@ import {
   arcToCubics,
   pathBounds,
 } from './geometry.js';
+import { GLYPHS } from './glyphs.js';
 
 export const PT_TO_MM = 25.4 / 72;
 
@@ -61,6 +62,7 @@ export const OPS = {
 export const MATERIALS = {
   silver: { label: 'Stainless / silver', base: '#c9ccd1', base2: '#eef0f3', mark: '#3a3d42' },
   black: { label: 'Black metal', base: '#1d1e21', base2: '#3a3b40', mark: '#c5c8cc' },
+  blackgold: { label: 'Black with gold', base: '#141416', base2: '#2e2d2b', mark: '#d9b75f' },
   gold: { label: 'Gold', base: '#c9a548', base2: '#f1dc94', mark: '#5b4614' },
   rose: { label: 'Rose gold', base: '#d29c8a', base2: '#f3d1c4', mark: '#6b3a2c' },
   blue: { label: 'Anodised blue', base: '#23406e', base2: '#3e66a8', mark: '#d7dde6' },
@@ -250,6 +252,56 @@ function doubleBorder(card, inset = 1.8, gap = 0.7) {
   ];
 }
 
+
+// Chinese characters pre-converted to outlines (see scripts/extract-glyphs.js).
+function glyphText(name, key, x, y, h, op = 'engrave') {
+  const cmds = fromOpentype(GLYPHS[key]);
+  const b = pathBounds(cmds);
+  return makeVector({ name, op, x, y, w: Math.round(((h * b.w) / b.h) * 1000) / 1000, h, paths: cmds, bounds: b });
+}
+
+// Ring of Greek-key (meander) motifs between two circles, as line art.
+export function makeMeanderRing(props = {}) {
+  const rOut = props.radius ?? 23.5;
+  const band = props.band ?? 3.6;
+  const rIn = rOut - band;
+  const units = props.units ?? Math.round((2 * Math.PI * (rIn + band / 2)) / (band * 1.05));
+  const c = rOut;
+  const pt = (i, u, v) => {
+    const a = ((i + u) / units) * 2 * Math.PI - Math.PI / 2;
+    const r = rIn + band * (0.12 + v * 0.76);
+    return [c + r * Math.cos(a), c + r * Math.sin(a)];
+  };
+  // one key: a squared spiral filling the unit cell
+  const key = [
+    [0.08, 0],
+    [0.08, 1],
+    [0.92, 1],
+    [0.92, 0.28],
+    [0.36, 0.28],
+    [0.36, 0.68],
+    [0.64, 0.68],
+  ];
+  const cmds = [...ellipsePath(c, c, rOut, rOut), ...ellipsePath(c, c, rIn, rIn)];
+  for (let i = 0; i < units; i++) {
+    key.forEach(([u, v], k) => {
+      if (k === 0) {
+        const [x, y] = pt(i, u, v);
+        cmds.push({ type: 'M', x, y });
+        return;
+      }
+      // subdivide so tangential steps follow the curve
+      const [pu, pv] = key[k - 1];
+      for (let t = 1; t <= 4; t++) {
+        const [x, y] = pt(i, pu + ((u - pu) * t) / 4, pv + ((v - pv) * t) / 4);
+        cmds.push({ type: 'L', x, y });
+      }
+    });
+  }
+  const { radius, band: _b, units: _u, ...rest } = props;
+  return shape('Greek-key ring', 'score', 10, 10, 2 * rOut, 2 * rOut, cmds, { open: true, ...rest });
+}
+
 // Centred text helper (x is the centre line).
 const ctext = (props) => makeText({ anchor: 'center', align: 'center', ...props });
 
@@ -375,6 +427,37 @@ export const TEMPLATES = {
     },
   },
 
+  dragon: {
+    group: 'Credit cards',
+    label: 'Golden dragon (金龙)',
+    desc: 'Black & gold card with 金龙 in Chinese, chip, and a Greek-key medallion ready for your dragon artwork.',
+    build(p) {
+      const c = p.card;
+      c.material = 'blackgold';
+      const mx = 61;
+      const my = 27;
+      const R = 23.5;
+      p.sides.front = [
+        glyphText('金龙 (Chinese title)', '金龙', 6, 5, 8.2),
+        makeText({ name: 'Tier', format: 'upper', text: 'ELITE', font: 'montserrat', sizePt: 6, letterSpacing: 1.2, x: 6.2, y: 14.3 }),
+        makeChipArt({ x: 8, y: 20 }),
+        makeMeanderRing({ name: 'Medallion Greek-key ring', radius: R, band: 3.4, x: mx - R, y: my - R }),
+        makeEllipse({ name: 'Medallion inner ring', op: 'score', x: mx - (R - 4.4), y: my - (R - 4.4), w: 2 * (R - 4.4), h: 2 * (R - 4.4) }),
+        ctext({ name: 'Artwork hint', op: 'none', text: 'Add your dragon artwork\n(Image, then dither or trace)', font: 'roboto', sizePt: 4.2, lineHeight: 1.4, x: mx, y: my - 3 }),
+        makeText({ name: 'Card holder', format: 'upper', text: 'YOUR NAME', font: 'roboto', sizePt: 9, letterSpacing: 0.3, x: 6, y: 36.5 }),
+        makeText({ name: 'Bank name', format: 'upper', text: 'GOLDEN DRAGON', font: 'montserrat', weight: 700, sizePt: 8, letterSpacing: 0.5, x: 6, y: 45 }),
+      ];
+      p.sides.back = [
+        makeRect({ name: 'Signature panel', op: 'score', x: 6, y: 8, w: 46, h: 8, radius: 0.6 }),
+        makeText({ name: 'CVV', format: 'digits', text: '123', font: 'mono', sizePt: 8.5, x: 55, y: 9.6 }),
+        makeText({ name: 'Card number', format: 'cardnumber', text: '4000 1234 5678 9010', font: 'mono', sizePt: 10, letterSpacing: 0.3, x: 6, y: 22 }),
+        makeText({ name: 'Expiry label', text: 'VALID THRU', font: 'montserrat', weight: 700, sizePt: 3.6, x: 6, y: 30 }),
+        makeText({ name: 'Expiry', format: 'expiry', text: '12/30', font: 'mono', sizePt: 8, x: 6, y: 32.6 }),
+        makeText({ name: 'Fine print', text: 'Golden Dragon Bank · Customer service +1 800 000 0000', font: 'roboto', sizePt: 3.8, x: 6, y: 45.5 }),
+        glyphText('金龙 (Chinese title)', '金龙', 66, 42, 6),
+      ];
+    },
+  },
   // ----- business cards -----
   business: {
     group: 'Business cards',

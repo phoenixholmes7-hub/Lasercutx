@@ -9,8 +9,8 @@ Design, make pictures editable with Claude, export laser files, or send the job 
 ## What it does
 
 - **Templates** (all front + back, everything editable):
-  - Credit cards: *Classic metal*, *Black charge card (centurion style, Amex-inspired)*, *Minimal brushed steel*, *Gold premium*
-  - Business cards: *Classic*, *Executive black (centred)*, *Modern split + key-ring hole*, *Signature script + QR*
+  - Credit cards: *Classic metal*, *Black charge card (centurion style, Amex-inspired)*, *Golden dragon (金龙)*, *Minimal brushed steel*, *Gold premium*
+  - Business cards: *Classic*, *Executive black*, *Modern split + key-ring hole*, *Signature script + QR*, *Minimal monogram*, *Corporate / law firm*, *Real estate agent*, *Vertical / portrait*, *Tech startup*, *Badge logo*
   - or blank, or start from an image of a card.
 
   ![All templates, front and back](docs/templates.png)
