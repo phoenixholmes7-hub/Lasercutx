@@ -1929,7 +1929,55 @@ function layerSummary() {
 
 // Direct sending to Ruida controllers (Thunder Nova). Connection details are
 // per computer, so they live in local storage rather than in the project.
-const ruidaLink = new RuidaLink();
+const ruidaLink = new RuidaLink({
+  onLog: (line) => rlog(line),
+  onState: (st) => {
+    ruidaState.conn = st;
+    renderRuidaStatus();
+  },
+  onStatus: (st) => {
+    Object.assign(ruidaState, st);
+    renderRuidaStatus();
+  },
+});
+const ruidaState = { conn: 'Disconnected', state: '', x: null, y: null };
+
+// Connection line: state, machine status and head position.
+function renderRuidaStatus() {
+  const el = $('#rStatus');
+  if (!el) return;
+  const p = ruidaPrefs();
+  const usb = p.via === 'usb';
+  const conn = usb ? ruidaState.conn : ruidaState.netOk ? 'Answering' : 'Not tested';
+  const ok = usb ? ruidaLink.usbConnected : ruidaState.netOk;
+  let text = `${ok ? '●' : '○'} ${conn}`;
+  if (usb && ok && ruidaState.state) text += ` · ${ruidaState.state}`;
+  if (usb && ok && ruidaState.x != null) text += ` · head X ${fmtLen(ruidaState.x)} Y ${fmtLen(ruidaState.y)} ${unitLabel()}`;
+  el.textContent = text;
+  el.className = `rstatus ${ok ? (/not answering/i.test(ruidaState.state) ? 'warn' : 'ok') : ''}`;
+  const btn = $('#rUsb');
+  if (btn) btn.textContent = ruidaLink.usbConnected ? 'Disconnect USB' : ruidaState.conn === 'Connecting…' ? 'Connecting…' : 'Connect USB cable';
+  for (const id of ['#rFrame', '#rStartJob', '#rPause', '#rResume', '#rStop']) {
+    const b = $(id);
+    if (b) b.disabled = !ok && id !== '#rStop' ? usb : false;
+  }
+}
+
+// Reconnect by itself when the laser is plugged in (or already allowed).
+async function ruidaAutoConnect(reason) {
+  if (machineOf().controller !== 'ruida' || ruidaPrefs().via !== 'usb' || ruidaLink.usbConnected) return;
+  const ok = await ruidaLink.autoConnect();
+  if (ok && reason) toast(`Laser connected (${reason})`);
+}
+if (usbSupported()) {
+  navigator.serial.addEventListener('connect', () => setTimeout(() => ruidaAutoConnect('plugged in'), 800));
+  navigator.serial.addEventListener('disconnect', async (e) => {
+    if (ruidaLink.port && e.target === ruidaLink.port) {
+      await ruidaLink.disconnectUsb();
+      rlog('USB cable unplugged');
+    }
+  });
+}
 function ruidaPrefs() {
   let p = {};
   try {
@@ -1981,7 +2029,8 @@ function renderRuidaPanel() {
         <label>Laser IP address <input id="rHost" value="${escapeHtml(pr.host)}" placeholder="192.168.1.100" /></label>
         <button type="button" id="rPing" class="mini" title="Check the laser answers">Test</button>
       </div>
-      <div class="btnrow" id="rUsbRow" ${pr.via === 'usb' ? '' : 'hidden'}><button type="button" id="rUsb">${ruidaLink.usbConnected ? '✓ USB connected – disconnect' : 'Connect USB cable'}</button></div>
+      <div class="btnrow" id="rUsbRow" ${pr.via === 'usb' ? '' : 'hidden'}><button type="button" id="rUsb">Connect USB cable</button></div>
+      <div class="rstatus" id="rStatus"></div>
       <div class="row">
         <label>Machine home corner
           <select id="rHome"><option value="top-right" ${pr.homeCorner === 'top-right' ? 'selected' : ''}>Top-right (most Ruida / Thunder)</option><option value="top-left" ${pr.homeCorner === 'top-left' ? 'selected' : ''}>Top-left</option></select>
@@ -2021,6 +2070,8 @@ function renderRuidaPanel() {
     $('#rNetRow').hidden = p.via !== 'network';
     $('#rUsbRow').hidden = p.via !== 'usb';
     updateWhere();
+    renderRuidaStatus();
+    if (p.via === 'usb') ruidaAutoConnect();
   };
   const updateWhere = () => {
     const p = ruidaPrefs();
@@ -2036,16 +2087,24 @@ function renderRuidaPanel() {
   $('#rPing').onclick = () =>
     ruidaAction(async () => {
       save();
+      ruidaState.netOk = false;
+      renderRuidaStatus();
       await ruidaLink.ping(ruidaPrefs().host);
+      ruidaState.netOk = true;
+      renderRuidaStatus();
       rlog(`✓ Laser answered at ${ruidaPrefs().host}`);
     }, 'Test');
   $('#rUsb').onclick = () =>
     ruidaAction(async () => {
-      if (ruidaLink.usbConnected) await ruidaLink.disconnectUsb();
-      else await ruidaLink.connectUsb();
-      $('#rUsb').textContent = ruidaLink.usbConnected ? '✓ USB connected – disconnect' : 'Connect USB cable';
-      rlog(ruidaLink.usbConnected ? '✓ USB connected' : 'USB disconnected');
+      if (ruidaLink.usbConnected) {
+        await ruidaLink.disconnectUsb();
+        rlog('USB disconnected');
+      } else {
+        await ruidaLink.connectUsb();
+      }
     }, 'USB');
+  renderRuidaStatus();
+  if (pr.via === 'usb') ruidaAutoConnect();
   $('#rFrame').onclick = () => ruidaRun({ frameOnly: true });
   $('#rStartJob').onclick = () => ruidaRun({ frameOnly: false });
   const cmd = (bytes, label) => () => ruidaAction(async () => {
@@ -2091,6 +2150,9 @@ async function ruidaJob(frameOnly) {
 async function ruidaRun({ frameOnly }) {
   await ruidaAction(async () => {
     const p = ruidaPrefs();
+    if (p.via === 'usb' && !ruidaLink.usbConnected) {
+      await ruidaLink.connectUsb(); // proves the laser answers before sending anything
+    }
     const job = await ruidaJob(frameOnly);
     if (!job.bounds) throw new Error('Nothing to send on this side (check the layer Output switches).');
     const size = `${fmtLen(job.bounds.w)} × ${fmtLen(job.bounds.h)} ${unitLabel()}`;
@@ -2116,7 +2178,7 @@ async function saveRdFile() {
   const job = await ruidaJob(false);
   if (!job.bounds) throw new Error('Nothing to save on this side.');
   const name = `design-${state.side}.rd`;
-  const res = await platform.saveFile(name, swizzle(job.bytes), { name: 'Ruida job', extensions: ['rd'], mime: 'application/octet-stream' });
+  const res = await platform.saveFile(name, swizzle(job.bytes, ruidaLink.magic), { name: 'Ruida job', extensions: ['rd'], mime: 'application/octet-stream' });
   if (res) {
     rlog(`💾 Saved ${name} – copy it to a USB stick, plug it into the laser and run it from the panel (File / Udisk).`);
     toast('Saved .rd file for the laser’s USB port', 4000);
@@ -2808,7 +2870,8 @@ async function init() {
   fitZoom();
   hideSplash();
   refreshAiStatus();
-  window.__lcx = { state, ctx, renderAll, layoutToElements, select }; // handy for debugging & tests
+  setTimeout(() => ruidaAutoConnect(), 1500);
+  window.__lcx = { state, ctx, renderAll, layoutToElements, select, ruidaLink }; // handy for debugging & tests
 }
 
 init();

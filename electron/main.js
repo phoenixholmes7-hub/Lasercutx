@@ -295,14 +295,24 @@ function setupSerial() {
   ses.on('select-serial-port', async (event, portList, _wc, callback) => {
     event.preventDefault();
     if (!portList.length) {
-      await dialog.showMessageBox(win, { type: 'warning', message: 'No laser found', detail: 'Plug the laser in with USB, switch it on, and try again. On Windows you may need the CH340 driver.' });
+      await dialog.showMessageBox(win, {
+        type: 'warning',
+        message: 'No laser found',
+        detail: 'Plug the laser in with USB, switch it on, and try again. On Windows the laser needs its USB driver (FTDI / Ruida driver from LightBurn or RDWorks, or CH340 for diode lasers).',
+      });
       return callback('');
     }
+    // Pick the laser without asking when it's obvious: Ruida controllers use an
+    // FTDI chip (0403:6001); or there is only one serial port.
+    const id = (v) => (typeof v === 'number' ? v : parseInt(v, /^[0-9a-f]{4}$/i.test(v || '') ? 16 : 10));
+    const ftdi = portList.find((p) => id(p.vendorId) === 0x0403 && id(p.productId) === 0x6001);
+    if (ftdi) return callback(ftdi.portId);
+    if (portList.length === 1) return callback(portList[0].portId);
     const labels = portList.map((p) => `${p.displayName || p.portName}${p.portName && p.displayName ? ` (${p.portName})` : ''}`);
     const { response } = await dialog.showMessageBox(win, {
       type: 'question',
       message: 'Choose your laser',
-      detail: 'Select the USB port your laser is connected to.',
+      detail: 'Select the USB port your laser is connected to. LaserCutX remembers it.',
       buttons: [...labels, 'Cancel'],
       cancelId: labels.length,
     });

@@ -103,7 +103,9 @@ lasers (xTool, Ortur, Atomstack, Sculpfun, Creality…) and GRBL-based CO₂ mac
 Choose your laser in **⚙ Settings → Laser layers**, then open **🔌 Laser**:
 
 - **Network / Ethernet** (desktop app): enter the laser's IP address (shown on its panel), press **Test**.
-- **USB cable** (desktop app, Chrome or Edge): **Connect USB cable**.
+- **USB cable** (desktop app, Chrome or Edge): connects **automatically** when the laser is plugged in (the desktop app
+  picks the Ruida's FTDI USB port itself). It only shows **Connected** once the laser has answered, then shows its
+  live status (Idle / Running job) and head position. Speed and flow control are detected and remembered.
 - **Frame (laser off)** traces the job outline at 0 % power; **Start job** sends and runs it; **Pause / Resume / Stop**.
 - **Start from** the laser head position (jog it to the design's corner nearest home) or the origin set on the panel.
 - **Save .rd file** writes the job for a USB stick – run it from the laser's own panel.

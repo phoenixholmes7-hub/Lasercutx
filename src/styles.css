@@ -235,3 +235,7 @@ dialog .bulk.off .bulk-opts { opacity: 0.4; pointer-events: none; }
   #btnSettings::before { content: '⚙'; font-size: 15px; }
   #btnMachine::before { content: '🔌'; font-size: 14px; }
 }
+
+.rstatus { font-size: 12px; color: var(--muted); margin: 2px 0 8px; font-variant-numeric: tabular-nums; }
+.rstatus.ok { color: #8be0a4; }
+.rstatus.warn { color: #ffcf7a; }
