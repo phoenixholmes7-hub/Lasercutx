@@ -98,9 +98,23 @@ lasers (xTool, Ortur, Atomstack, Sculpfun, Creality…) and GRBL-based CO₂ mac
 - Start the job from the origin you set, the current laser position, or machine 0,0.
 - Order: images → fills → lines → cuts, with holes cut before outlines.
 
-Not supported for direct sending: **fiber lasers running EzCad** and **Ruida** CO₂ controllers use closed protocols –
-export DXF/SVG and open them in EzCad / RDWorks / LightBurn instead. Always wear laser safety glasses and never leave
-a running laser unattended.
+### Ruida controllers (Thunder Laser Nova and most Chinese CO₂ lasers) – beta
+
+Choose your laser in **⚙ Settings → Laser layers**, then open **🔌 Laser**:
+
+- **Network / Ethernet** (desktop app): enter the laser's IP address (shown on its panel), press **Test**.
+- **USB cable** (desktop app, Chrome or Edge): **Connect USB cable**.
+- **Frame (laser off)** traces the job outline at 0 % power; **Start job** sends and runs it; **Pause / Resume / Stop**.
+- **Start from** the laser head position (jog it to the design's corner nearest home) or the origin set on the panel.
+- **Save .rd file** writes the job for a USB stick – run it from the laser's own panel.
+
+The Ruida job format and network protocol were implemented from the open documentation of the MeerK40t,
+VisiCut/LibLaserCut and ruida-laser projects and verified with their file decoder and against a simulated
+controller – not yet on real hardware. **Frame first, and run the first job on scrap at low power.**
+If text comes out mirrored, change **Machine home corner**.
+
+Not supported for direct sending: **fiber lasers running EzCad** use a closed protocol – export DXF/SVG and open them
+in EzCad. Always wear laser safety glasses and never leave a running laser unattended.
 
 ![Laser panel](docs/laser-panel.png)
 
@@ -154,6 +168,8 @@ src/js/exporters.js SVG / DXF / raster export
 src/js/trace.js    image → vector tracing
 src/js/gcode.js    G-code generator (hatch fill, cut ordering)
 src/js/machine.js  GRBL USB connection (Web Serial)
+src/js/ruida.js    Ruida job (.rd) encoder; ruida-link.js sends it by network or USB
+src/js/machines.js laser profiles and material presets
 src/js/claude.js   Claude AI: Imagine + Make editable
 src/js/imaging.js  erase boxes, PNG rendering, SVG logo import
 src/vendor/        opentype.js, qrcode-generator, Claude SDK bundle, fonts (OFL) – refresh with `npm run vendor`

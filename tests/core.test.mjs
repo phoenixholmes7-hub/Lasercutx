@@ -215,3 +215,51 @@ test('machine profiles, presets and unit-correct G-code feeds', async () => {
   assert.ok(gcode.includes('F1200'), 'cut 20 mm/s -> F1200');
   assert.ok(gcode.includes('F24000'), 'fill 400 mm/s -> F24000');
 });
+
+test('Ruida encoding: swizzle, numbers, packets', async () => {
+  const R = await import('../src/js/ruida.js');
+  // the controller's ACK arrives as 0xC6 (as used by LibLaserCut/VisiCut)
+  assert.equal(R.swizzleByte(R.ACK), 0xc6);
+  for (let b = 0; b < 256; b++) assert.equal(R.unswizzleByte(R.swizzleByte(b)), b);
+  assert.deepEqual(R.enc32(1000), [0, 0, 0, 7, 104]); // 1000 = 7*128 + 104
+  assert.deepEqual(R.encPower(100), [0x7f, 0x7f]);
+  assert.deepEqual(R.encCoord(85.6), R.enc32(85600));
+  const data = R.swizzle(new Uint8Array(2500).fill(0x42));
+  const pk = R.udpPackets(data);
+  assert.equal(pk.length, 3);
+  assert.equal(pk[0].length, R.UDP_CHUNK + 2);
+  const sum = [...pk[2].subarray(2)].reduce((a, b) => a + b, 0);
+  assert.equal((pk[2][0] << 8) | pk[2][1], sum & 0xffff);
+});
+
+test('Ruida job: layers, moves, frame at 0 % and file checksum', async () => {
+  const R = await import('../src/js/ruida.js');
+  const p = newProject('keychain');
+  p.laser.machine.speedUnit = 'mm/s';
+  p.laser.engrave = { output: true, speed: 300, power: 30, passes: 1, interval: 0.2 };
+  p.laser.cut = { output: true, speed: 20, power: 75, passes: 1 };
+  const job = R.buildRuidaJob(p, 'front', ctx, { homeCorner: 'top-right' });
+  assert.deepEqual(job.parts.map((x) => x.name), ['Fill', 'Cut']);
+  assert.ok(Math.abs(job.bounds.w - 60) < 1e-6 && Math.abs(job.bounds.h - 25) < 1e-6);
+  const b = job.bytes;
+  assert.deepEqual([...b.slice(0, 2)], [0xd8, 0x12]); // start from current position
+  assert.equal(b[b.length - 1], 0xd7); // end of file
+  // every data byte must be 7-bit except command bytes; the checksum covers all before it
+  const sumAt = b.length - 8; // E5 05 + 5-byte sum + D7
+  assert.deepEqual([...b.slice(sumAt, sumAt + 2)], [0xe5, 0x05]);
+  const expected = [...b.slice(0, sumAt)].reduce((a, x) => a + x, 0) + 0xd7;
+  assert.deepEqual([...b.slice(sumAt + 2, sumAt + 7)], R.enc32(expected));
+  // speed 20 mm/s encoded as 20000 µm/s in the cut layer
+  const hex = Buffer.from(b).toString('hex');
+  assert.ok(hex.includes('c90401' + Buffer.from(R.enc32(20000)).toString('hex')), 'cut layer speed');
+  // frame: one 0 % layer tracing the box
+  const frame = R.buildRuidaJob(p, 'front', ctx, { frameOnly: true });
+  assert.equal(frame.parts.length, 1);
+  assert.equal(frame.parts[0].power, 0);
+  assert.equal(frame.parts[0].paths, 1);
+  // mm/min speeds (GRBL profile) are converted to mm/s
+  p.laser.machine.speedUnit = 'mm/min';
+  p.laser.cut.speed = 1200;
+  const j2 = R.buildRuidaJob(p, 'front', ctx, {});
+  assert.equal(j2.parts.find((x) => x.name === 'Cut').speed, 20);
+});

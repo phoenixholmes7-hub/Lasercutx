@@ -215,3 +215,23 @@ dialog .bulk.off .bulk-opts { opacity: 0.4; pointer-events: none; }
 /* "hidden" always wins over display rules like .row / .btnrow flex */
 [hidden] { display: none !important; }
 .laser-table input[data-f='interval'] { width: 92px; }
+
+.msection { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.msection summary { cursor: pointer; color: var(--muted); }
+.mtitle { margin: 0 0 4px; }
+.pill.beta { background: #4a3f75; color: #d9ccff; }
+#mRuida .row { align-items: end; }
+#mRuida .row label { margin-bottom: 6px; }
+#mRuida button.mini { padding: 5px 8px; margin-bottom: 6px; }
+#rProgress { width: 100%; height: 8px; margin: 6px 0; }
+
+/* keep the whole top bar visible on 1280-px windows */
+@media (max-width: 1380px) {
+  .topbar { gap: 6px; }
+  .topbar button { padding: 6px 8px; }
+  #zoomLabel { display: none; }
+  #snapSel, #unitSel { padding: 5px 4px; }
+  #btnSettings, #btnMachine { font-size: 0; }
+  #btnSettings::before { content: '⚙'; font-size: 15px; }
+  #btnMachine::before { content: '🔌'; font-size: 14px; }
+}

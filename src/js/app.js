@@ -35,6 +35,8 @@ import * as platform from './platform.js';
 import * as claude from './claude.js';
 import { Grbl, serialSupported } from './machine.js';
 import { MACHINES, PRESETS, setMachine, applyMaterialPreset } from './machines.js';
+import { buildRuidaJob, swizzle } from './ruida.js';
+import { RuidaLink, networkSupported, usbSupported, STOP, PAUSE, RESUME } from './ruida-link.js';
 import {
   loadImage,
   preloadImages,
@@ -1925,30 +1927,200 @@ function layerSummary() {
   ];
 }
 
+// Direct sending to Ruida controllers (Thunder Nova). Connection details are
+// per computer, so they live in local storage rather than in the project.
+const ruidaLink = new RuidaLink();
+function ruidaPrefs() {
+  let p = {};
+  try {
+    p = JSON.parse(localStorage.getItem('lcx.ruida') || '{}');
+  } catch {
+    /* storage unavailable */
+  }
+  return {
+    via: networkSupported() ? 'network' : 'usb',
+    host: '192.168.1.100',
+    homeCorner: 'top-right',
+    startFrom: 'current',
+    ...p,
+  };
+}
+function saveRuidaPrefs(p) {
+  try {
+    localStorage.setItem('lcx.ruida', JSON.stringify(p));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function renderRuidaPanel() {
   const ruida = machineOf().controller === 'ruida';
   $('#mRuida').hidden = !ruida;
   $('#mConnectRow').hidden = ruida;
   $('.machine .mbody').hidden = ruida;
   $('#mGrblNote').hidden = ruida;
+  $('#mState').hidden = ruida; // GRBL connection state does not apply
   if (!ruida) return;
+  const pr = ruidaPrefs();
   const preset = PRESETS[state.project.laser.machine.profile]?.[state.project.laser.machine.preset];
+  const canNet = networkSupported();
+  const canUsb = usbSupported();
   $('#mRuida').innerHTML = `
-    <p><b>${machineOf().label}</b> uses a Ruida controller, so jobs go through <b>LightBurn</b> (or RDWorks) instead of USB from here.</p>
-    <ol class="steps">
-      <li>Click <b>Export… → SVG</b> (tick Bulk ×6 for a batch).</li>
-      <li>In LightBurn: <b>File → Import</b> the SVG. Layers arrive by colour.</li>
-      <li>Enter these settings in <b>Cuts / Layers</b>${preset ? ` (${preset.label})` : ''}:</li>
-    </ol>
-    <ul class="settings-list">${layerSummary().map((l) => `<li>${l}</li>`).join('')}</ul>
-    <p class="note">Units: set LightBurn to ${inch() ? '<b>inches</b>' : '<b>mm</b>'} to match. Focus, frame, then Start in LightBurn. ${preset ? '' : 'Pick a material preset in ⚙ Settings to fill these in.'}</p>
-    <div class="btnrow"><button type="button" id="mOpenSettings">⚙ Change settings</button><button type="button" id="mExport" class="primary">Export SVG…</button></div>`;
-  $('#mOpenSettings').onclick = () => showSettings('laser');
-  $('#mExport').onclick = () => {
-    showExportDialog();
-    $('#exportForm').format.value = 'svg';
-    $('#exportForm').format.onchange();
+    <p class="mtitle"><b>${machineOf().label}</b></p>
+    <div class="msection">
+      <b>Send the job directly</b> <span class="pill beta">beta</span>
+      <div class="row">
+        <label>Connect by
+          <select id="rVia">
+            <option value="network" ${pr.via === 'network' ? 'selected' : ''} ${canNet ? '' : 'disabled'}>Network / Ethernet${canNet ? '' : ' (desktop app)'}</option>
+            <option value="usb" ${pr.via === 'usb' ? 'selected' : ''} ${canUsb ? '' : 'disabled'}>USB cable${canUsb ? '' : ' (not in this browser)'}</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" id="rNetRow" ${pr.via === 'network' ? '' : 'hidden'}>
+        <label>Laser IP address <input id="rHost" value="${escapeHtml(pr.host)}" placeholder="192.168.1.100" /></label>
+        <button type="button" id="rPing" class="mini" title="Check the laser answers">Test</button>
+      </div>
+      <div class="btnrow" id="rUsbRow" ${pr.via === 'usb' ? '' : 'hidden'}><button type="button" id="rUsb">${ruidaLink.usbConnected ? '✓ USB connected – disconnect' : 'Connect USB cable'}</button></div>
+      <div class="row">
+        <label>Machine home corner
+          <select id="rHome"><option value="top-right" ${pr.homeCorner === 'top-right' ? 'selected' : ''}>Top-right (most Ruida / Thunder)</option><option value="top-left" ${pr.homeCorner === 'top-left' ? 'selected' : ''}>Top-left</option></select>
+        </label>
+        <label>Start from
+          <select id="rStart"><option value="current" ${pr.startFrom === 'current' ? 'selected' : ''}>Laser head position</option><option value="origin" ${pr.startFrom === 'origin' ? 'selected' : ''}>Origin set on panel</option></select>
+        </label>
+      </div>
+      <p class="note" id="rWhere"></p>
+      <div class="btnrow">
+        <button type="button" id="rFrame" title="Traces the job outline with the laser at 0 % so you can check placement">▢ Frame (laser off)</button>
+        <button type="button" id="rStartJob" class="primary">▶ Start job</button>
+      </div>
+      <div class="btnrow">
+        <button type="button" id="rPause">⏸ Pause</button>
+        <button type="button" id="rResume">▶ Resume</button>
+        <button type="button" id="rStop" class="danger">■ Stop</button>
+      </div>
+      <progress id="rProgress" max="1" value="0"></progress>
+      <div class="mlog" id="rLog"></div>
+      <div class="btnrow"><button type="button" id="rSaveRd" title="Copy to a USB stick and run it from the laser's own panel">💾 Save .rd file (USB stick)</button></div>
+    </div>
+    <details class="msection">
+      <summary>Or use LightBurn / RDWorks</summary>
+      <ol class="steps">
+        <li><b>Export… → SVG</b>, then in LightBurn <b>File → Import</b>.</li>
+        <li>Enter these in <b>Cuts / Layers</b>${preset ? ` (${preset.label})` : ''}:</li>
+      </ol>
+      <ul class="settings-list">${layerSummary().map((l) => `<li>${l}</li>`).join('')}</ul>
+      <p class="note">Set LightBurn to ${inch() ? '<b>inches</b>' : '<b>mm</b>'} to match.</p>
+    </details>
+    <div class="btnrow"><button type="button" id="mOpenSettings">⚙ Laser settings</button></div>`;
+
+  const save = () => {
+    const p = { via: $('#rVia').value, host: $('#rHost').value.trim(), homeCorner: $('#rHome').value, startFrom: $('#rStart').value };
+    saveRuidaPrefs(p);
+    $('#rNetRow').hidden = p.via !== 'network';
+    $('#rUsbRow').hidden = p.via !== 'usb';
+    updateWhere();
   };
+  const updateWhere = () => {
+    const p = ruidaPrefs();
+    const corner = p.homeCorner === 'top-right' ? 'top-right' : 'top-left';
+    $('#rWhere').textContent =
+      p.startFrom === 'current'
+        ? `Jog the laser head (panel arrows) to where the design's ${corner} corner should be, then Frame to check.`
+        : `The design's ${corner} corner goes to the origin set on the laser's panel (Origin key). Frame to check.`;
+  };
+  for (const id of ['#rVia', '#rHost', '#rHome', '#rStart']) $(id).onchange = save;
+  updateWhere();
+  $('#mOpenSettings').onclick = () => showSettings('laser');
+  $('#rPing').onclick = () =>
+    ruidaAction(async () => {
+      save();
+      await ruidaLink.ping(ruidaPrefs().host);
+      rlog(`✓ Laser answered at ${ruidaPrefs().host}`);
+    }, 'Test');
+  $('#rUsb').onclick = () =>
+    ruidaAction(async () => {
+      if (ruidaLink.usbConnected) await ruidaLink.disconnectUsb();
+      else await ruidaLink.connectUsb();
+      $('#rUsb').textContent = ruidaLink.usbConnected ? '✓ USB connected – disconnect' : 'Connect USB cable';
+      rlog(ruidaLink.usbConnected ? '✓ USB connected' : 'USB disconnected');
+    }, 'USB');
+  $('#rFrame').onclick = () => ruidaRun({ frameOnly: true });
+  $('#rStartJob').onclick = () => ruidaRun({ frameOnly: false });
+  const cmd = (bytes, label) => () => ruidaAction(async () => {
+    const p = ruidaPrefs();
+    await ruidaLink.command(bytes, { via: p.via, host: p.host });
+    rlog(label);
+  }, label);
+  $('#rPause').onclick = cmd(PAUSE, '⏸ Paused');
+  $('#rResume').onclick = cmd(RESUME, '▶ Resumed');
+  $('#rStop').onclick = cmd(STOP, '■ Stop sent');
+  $('#rSaveRd').onclick = () => ruidaAction(saveRdFile, 'Save');
+}
+
+function rlog(line) {
+  const box = $('#rLog');
+  if (!box) return;
+  box.textContent = `${box.textContent}${line}\n`.split('\n').slice(-40).join('\n');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function ruidaAction(fn, label) {
+  try {
+    await fn();
+  } catch (e) {
+    rlog(`! ${label}: ${e.message}`);
+    toast(`${label}: ${e.message}`, 5000);
+  }
+}
+
+async function ruidaJob(frameOnly) {
+  await preloadImages(state.project);
+  const sideEls = els();
+  const p = ruidaPrefs();
+  return buildRuidaJob(state.project, state.side, ctx, {
+    speedUnit: machineOf().speedUnit,
+    homeCorner: p.homeCorner,
+    startFrom: p.startFrom,
+    frameOnly,
+    imageMask: (el, pxPerMm) => engraveMask(el, sideEls, pxPerMm),
+  });
+}
+
+async function ruidaRun({ frameOnly }) {
+  await ruidaAction(async () => {
+    const p = ruidaPrefs();
+    const job = await ruidaJob(frameOnly);
+    if (!job.bounds) throw new Error('Nothing to send on this side (check the layer Output switches).');
+    const size = `${fmtLen(job.bounds.w)} × ${fmtLen(job.bounds.h)} ${unitLabel()}`;
+    if (!frameOnly) {
+      const lines = job.parts.map((pt) => `• ${pt.name}: ${speedToDisp(machineOf().speedUnit === 'mm/s' ? pt.speed : pt.speed * 60)} ${speedUnitLabel()}, ${pt.power}%, ${pt.passes} pass${pt.passes > 1 ? 'es' : ''}`);
+      const ok = confirm(
+        `Start this job on the laser now?\n\nSize: ${size} (${state.side} side)\n${lines.join('\n')}\n\n` +
+          `⚠ The laser will fire as soon as the job arrives. Lid closed, air assist and exhaust on, safety glasses, never leave it unattended.\n` +
+          `Tip: run Frame first to check placement.`
+      );
+      if (!ok) return;
+    }
+    $('#rProgress').value = 0;
+    rlog(frameOnly ? `▢ Framing ${size} at 0 % power…` : `▶ Sending job (${size})…`);
+    await ruidaLink.send(job.bytes, { via: p.via, host: p.host, onProgress: (f) => ($('#rProgress').value = f) });
+    $('#rProgress').value = 1;
+    rlog(frameOnly ? '✓ Frame sent' : '✓ Job sent – the laser is running it');
+    toast(frameOnly ? 'Frame sent to the laser' : 'Job sent to the laser', 3500);
+  }, frameOnly ? 'Frame' : 'Start job');
+}
+
+async function saveRdFile() {
+  const job = await ruidaJob(false);
+  if (!job.bounds) throw new Error('Nothing to save on this side.');
+  const name = `design-${state.side}.rd`;
+  const res = await platform.saveFile(name, swizzle(job.bytes), { name: 'Ruida job', extensions: ['rd'], mime: 'application/octet-stream' });
+  if (res) {
+    rlog(`💾 Saved ${name} – copy it to a USB stick, plug it into the laser and run it from the panel (File / Udisk).`);
+    toast('Saved .rd file for the laser’s USB port', 4000);
+  }
 }
 
 function toggleMachinePanel() {

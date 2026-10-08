@@ -6,6 +6,15 @@ contextBridge.exposeInMainWorld('lcx', {
   saveFiles: (opts) => ipcRenderer.invoke('save-files', opts),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
   userName: ipcRenderer.sendSync('user-name'),
+  ruida: {
+    send: (host, packets, ack) => ipcRenderer.invoke('ruida-udp-send', { host, packets, ack }),
+    cancel: () => ipcRenderer.invoke('ruida-udp-cancel'),
+    ping: (host, packet) => ipcRenderer.invoke('ruida-udp-ping', { host, packet }),
+    onProgress: (cb) => {
+      ipcRenderer.removeAllListeners('ruida-progress');
+      ipcRenderer.on('ruida-progress', (_e, f) => cb(f));
+    },
+  },
   secret: {
     get: (name) => ipcRenderer.invoke('secret-get', name),
     set: (name, value) => ipcRenderer.invoke('secret-set', name, value),

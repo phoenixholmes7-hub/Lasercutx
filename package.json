@@ -1,7 +1,7 @@
 {
   "name": "lasercutx",
   "productName": "LaserCutX",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Simple desktop designer for metal business cards and custom metal credit cards. Exports laser-ready SVG, DXF and PNG.",
   "main": "electron/main.js",
   "author": "LaserCutX",
