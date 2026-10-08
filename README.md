@@ -52,8 +52,14 @@ Design, make pictures editable with Claude, export laser files, or send the job 
   Space- or middle-drag to pan.
 - **Images:** paste (Ctrl/Cmd+V) or import; brightness, contrast, gamma, invert; grayscale, threshold or **dither**;
   erase boxes; **trace to vector**.
-- **Laser settings** (⚙ Settings → Laser layers): speed, power, passes and line interval per layer, max S value,
-  M3/M4, air assist – saved with the project.
+- **Laser settings** (⚙ Settings → Laser layers): pick **your laser** and a **material preset** (anodized aluminum,
+  stainless + marking spray, coated metal, plywood, acrylic, leather) to fill in speed, power, passes and line
+  interval per layer – saved with the project.
+  - **Thunder Laser Nova, 60 W RF CO₂ (Ruida):** speeds in mm/s (in/s in inch mode). Ruida machines are sent jobs through
+    LightBurn: the 🔌 Laser panel and the export dialog list the exact layer settings to enter there.
+  - **GRBL lasers:** speeds in mm/min (in/min); used for G-code export and the USB panel.
+- **Inches or millimetres:** the units menu in the top bar switches every size, position, gap, snap step and speed.
+  Inches is the default on US-English computers; files are always exported at true size.
 
 | Shortcut | Action |
 |---|---|

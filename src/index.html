@@ -51,6 +51,10 @@
         <option value="5">Snap 5</option>
       </select>
       <button id="btnGrid" title="Show grid">#</button>
+      <select id="unitSel" title="Measurement units">
+        <option value="in">inches</option>
+        <option value="mm">mm</option>
+      </select>
     </div>
     <div class="spacer"></div>
     <button id="btnSettings" title="Settings: laser speed/power per layer, Claude AI key">⚙ Settings</button>
@@ -96,7 +100,8 @@
       <div class="statusbar"><span class="hint" id="hint"></span><span class="status" id="status"></span></div>
       <div class="machine" id="machinePanel" hidden>
         <div class="mhead"><b>🔌 Laser</b> <span id="mState" class="pill">Disconnected</span><button type="button" id="mClose" class="x" title="Close">✕</button></div>
-        <div class="btnrow"><button type="button" id="mConnect" class="primary">Connect via USB</button></div>
+        <div id="mRuida" class="mruida" hidden></div>
+        <div class="btnrow" id="mConnectRow"><button type="button" id="mConnect" class="primary">Connect via USB</button></div>
         <div class="mbody">
           <div class="mpos" id="mPos">X 0.00 · Y 0.00</div>
           <div class="btnrow"><button type="button" data-m="home">⌂ Home</button><button type="button" data-m="unlock">🔓 Unlock</button><button type="button" data-m="origin" title="Make the laser's current position the job's bottom-left corner">◎ Set origin</button></div>
@@ -117,7 +122,7 @@
           <div class="mlog" id="mLog"></div>
           <input type="text" id="mCmd" placeholder="Send a G-code / GRBL command (e.g. $$) and press Enter" />
         </div>
-        <p class="note">Works with GRBL lasers (most diode and many CO₂ machines). Fiber (EzCad) and Ruida machines: use Export instead.</p>
+        <p class="note" id="mGrblNote">Works with GRBL lasers (most diode and many CO₂ machines). Fiber (EzCad) and Ruida machines: use Export instead.</p>
       </div>
     </div>
 
@@ -173,7 +178,7 @@
         <div class="row bulk-opts">
           <label>Copies <input type="number" name="copies" value="6" min="2" max="100" step="1" /></label>
           <label>Columns <input type="number" name="cols" value="3" min="1" max="20" step="1" /></label>
-          <label>Gap (mm) <input type="number" name="gap" value="3" min="0" max="50" step="0.5" /></label>
+          <label id="gapLabel">Gap (mm) <input type="number" name="gap" value="3" min="0" max="50" step="0.5" data-unit="mm" /></label>
         </div>
         <p class="note" id="bulkNote"></p>
       </fieldset>
@@ -199,22 +204,28 @@
       <h2>⚙ Settings</h2>
       <div class="tabs"><button type="button" data-tab="laser" class="active">Laser layers</button><button type="button" data-tab="claude">✨ Claude AI</button></div>
       <div class="tab" data-pane="laser">
-        <p class="note">Speed, power and passes for each layer – used for G-code export and when sending jobs over USB.</p>
-        <table class="laser-table">
-          <thead><tr><th>Layer</th><th>Output</th><th>Speed<br>mm/min</th><th>Power<br>%</th><th>Passes</th><th>Line interval<br>mm</th></tr></thead>
-          <tbody id="laserRows"></tbody>
-        </table>
         <div class="row">
-          <label>Max spindle (S value for 100%) <input type="number" name="maxS" min="1" step="1" /></label>
-          <label>Travel speed mm/min <input type="number" name="travel" min="100" step="100" /></label>
+          <label>Your laser <select name="machineProfile" id="machineProfile"></select></label>
         </div>
         <div class="row">
+          <label>Material preset <select name="materialPreset" id="materialPreset"></select></label>
+        </div>
+        <p class="note" id="presetNote"></p>
+        <table class="laser-table">
+          <thead><tr><th>Layer</th><th>Output</th><th>Speed<br><span class="u-speed">mm/min</span></th><th>Power<br>% (max)</th><th>Passes</th><th>Line interval<br><span class="u-len">mm</span></th></tr></thead>
+          <tbody id="laserRows"></tbody>
+        </table>
+        <div class="row grbl-only">
+          <label>Max spindle (S value for 100%) <input type="number" name="maxS" min="1" step="1" /></label>
+          <label>Travel speed <span class="u-speed">mm/min</span> <input type="number" name="travel" min="1" step="any" /></label>
+        </div>
+        <div class="row grbl-only">
           <label>Laser mode
             <select name="laserMode"><option value="M4">M4 – dynamic power (recommended)</option><option value="M3">M3 – constant power</option></select>
           </label>
           <label class="check" style="align-self:end"><input type="checkbox" name="airAssist" /> Air assist (M8)</label>
         </div>
-        <p class="note">Start low and test on scrap first.</p>
+        <p class="note" id="laserFoot">Presets are starting points – run a material test on scrap first.</p>
       </div>
       <div class="tab" data-pane="claude" hidden>
         <p class="note" id="claudeStatus"></p>

@@ -34,6 +34,7 @@ import { toGcode } from './gcode.js';
 import * as platform from './platform.js';
 import * as claude from './claude.js';
 import { Grbl, serialSupported } from './machine.js';
+import { MACHINES, PRESETS, setMachine, applyMaterialPreset } from './machines.js';
 import {
   loadImage,
   preloadImages,
@@ -122,6 +123,50 @@ const round = (n, p = 2) => Math.round(n * 10 ** p) / 10 ** p;
 const pad = () => Math.max(6, Math.min(card().w, card().h) * 0.06); // workspace margin in mm
 const isCard = () => (card().kind || 'card') === 'card';
 const ui = (k) => 8 / state.zoom * k; // screen-constant sizes in mm
+
+// ---------- display units (everything is stored in mm) ----------
+// Default: inches on US-English systems, millimetres elsewhere. Saved per user.
+function loadUnits() {
+  try {
+    const u = localStorage.getItem('lcx.units');
+    if (u === 'mm' || u === 'in') return u;
+  } catch {
+    /* storage unavailable */
+  }
+  return /^en-US/i.test(navigator.language || '') ? 'in' : 'mm';
+}
+const units = { current: loadUnits() };
+const inch = () => units.current === 'in';
+const unitLabel = () => (inch() ? 'in' : 'mm');
+const toDisp = (mm) => (inch() ? mm / 25.4 : mm);
+const fromDisp = (v) => (inch() ? v * 25.4 : v);
+const fmtLen = (mm, d) => toDisp(mm).toFixed(d ?? (inch() ? 2 : 1));
+// Snap choices in the current unit (values are mm).
+function fillSnapOptions() {
+  const sel = $('#snapSel');
+  const opts = inch()
+    ? [[0, 'No snap'], [25.4 / 64, 'Snap 1/64"'], [25.4 / 32, 'Snap 1/32"'], [25.4 / 16, 'Snap 1/16"'], [25.4 / 8, 'Snap 1/8"'], [25.4 / 4, 'Snap 1/4"']]
+    : [[0, 'No snap'], [0.1, 'Snap 0.1 mm'], [0.5, 'Snap 0.5 mm'], [1, 'Snap 1 mm'], [5, 'Snap 5 mm']];
+  sel.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  // keep the closest equivalent of the current snap
+  let best = opts[1][0];
+  if (!state.snap) best = 0;
+  else for (const [v] of opts.slice(1)) if (Math.abs(v - state.snap) < Math.abs(best - state.snap)) best = v;
+  state.snap = best;
+  sel.value = String(best);
+}
+
+function setUnits(u) {
+  units.current = u === 'in' ? 'in' : 'mm';
+  try {
+    localStorage.setItem('lcx.units', units.current);
+  } catch {
+    /* storage unavailable */
+  }
+  $('#unitSel').value = units.current;
+  renderStage();
+  renderProps();
+}
 
 function toast(msg, ms = 2600) {
   const t = $('#toast');
@@ -330,11 +375,11 @@ const hexRgb = (hex) => [1, 3, 5].map((i) => round(parseInt(hex.slice(i, i + 2),
 
 function renderStatus() {
   const parts = [];
-  if (state.cursor) parts.push(`X ${state.cursor[0].toFixed(1)}  Y ${state.cursor[1].toFixed(1)} mm`);
+  if (state.cursor) parts.push(`X ${fmtLen(state.cursor[0])}  Y ${fmtLen(state.cursor[1])} ${unitLabel()}`);
   const sel = selectedEls();
   if (sel.length) {
     const u = unionBox(sel);
-    parts.push(`${sel.length > 1 ? `${sel.length} items · ` : ''}${u.w.toFixed(1)} × ${u.h.toFixed(1)} mm`);
+    parts.push(`${sel.length > 1 ? `${sel.length} items · ` : ''}${fmtLen(u.w)} × ${fmtLen(u.h)} ${unitLabel()}`);
   }
   $('#status').textContent = parts.join('   ·   ');
   const hints = {
@@ -423,6 +468,15 @@ function renderQuickFill() {
 // ---------- properties panel helpers ----------
 
 function field(parent, label, value, onInput, opts = {}) {
+  // lengths are stored in mm and shown in the chosen unit
+  if (opts.len) {
+    label = label.replace(/\(mm\)/g, `(${unitLabel()})`).replace(/ in mm\b/g, ` in ${unitLabel()}`);
+    if (typeof value === 'number') value = toDisp(value);
+    if (inch() && opts.step) opts = { ...opts, step: Math.max(0.001, Math.round((opts.step / 25.4) * 1000) / 1000) };
+    if (inch() && opts.min !== undefined) opts = { ...opts, min: Math.round((opts.min / 25.4) * 1000) / 1000 };
+    const inner = onInput;
+    onInput = (v, input) => inner(typeof v === 'number' ? fromDisp(v) : v, input);
+  }
   const l = document.createElement('label');
   l.textContent = label;
   let input;
@@ -452,7 +506,7 @@ function field(parent, label, value, onInput, opts = {}) {
       l.appendChild(input);
       l.appendChild(document.createTextNode(' ' + label));
     } else {
-      input.value = typeof value === 'number' ? round(value, 3) : value ?? '';
+      input.value = typeof value === 'number' ? round(value, opts.len && inch() ? 4 : 3) : value ?? '';
     }
   }
   if (input.type !== 'checkbox') l.appendChild(input);
@@ -543,10 +597,10 @@ function renderProps() {
 
   const geo = elementGeometry(el, ctx);
   const r = row(p);
-  field(r, el.anchor === 'center' ? 'X centre (mm)' : 'X (mm)', el.x, setter(el, 'x'), { type: 'number', step: 0.1 });
-  field(r, 'Y (mm)', el.y, setter(el, 'y'), { type: 'number', step: 0.1 });
+  field(r, el.anchor === 'center' ? 'X centre (mm)' : 'X (mm)', el.x, setter(el, 'x'), { type: 'number', step: 0.1, len: true });
+  field(r, 'Y (mm)', el.y, setter(el, 'y'), { type: 'number', step: 0.1, len: true });
   if (el.type === 'text') {
-    tip(p, `Size: ${round(geo.w)} × ${round(geo.h)} mm`);
+    tip(p, `Size: ${fmtLen(geo.w)} × ${fmtLen(geo.h)} ${unitLabel()}`);
   } else {
     const r2 = row(p);
     const keepAspect = el.type === 'image' || el.type === 'vector';
@@ -556,19 +610,19 @@ function renderProps() {
       el.w = v;
       if (el.type === 'qr') el.h = v;
       refresh();
-    }, { type: 'number', step: 0.1, min: 0.1 });
+    }, { type: 'number', step: 0.1, min: 0.1, len: true });
     if (el.type !== 'qr') {
       field(r2, 'Height (mm)', el.h, (v) => {
         checkpoint(`${el.id}-h`);
         if (keepAspect && el.h) el.w = (el.w * v) / el.h;
         el.h = v;
         refresh();
-      }, { type: 'number', step: 0.1, min: 0.1 });
+      }, { type: 'number', step: 0.1, min: 0.1, len: true });
     }
   }
   const r3 = row(p);
   field(r3, 'Rotation (°)', el.rotation || 0, setter(el, 'rotation'), { type: 'number', step: 1 });
-  if (el.type === 'rect') field(r3, 'Corner radius', el.radius || 0, setter(el, 'radius'), { type: 'number', step: 0.1, min: 0 });
+  if (el.type === 'rect') field(r3, 'Corner radius (mm)', el.radius || 0, setter(el, 'radius'), { type: 'number', step: 0.1, min: 0, len: true });
 
   renderArrangeTools(p, [el]);
 
@@ -605,10 +659,10 @@ function renderTextProps(p, el) {
   field(r1, 'Size (pt)', el.sizePt, setter(el, 'sizePt'), { type: 'number', step: 0.5, min: 1 });
   field(r1, 'Bold', el.weight >= 700, (v) => setter(el, 'weight')(v ? 700 : 400), { type: 'checkbox' });
   const r2 = row(p);
-  field(r2, 'Letter spacing (mm)', el.letterSpacing, setter(el, 'letterSpacing'), { type: 'number', step: 0.1 });
+  field(r2, 'Letter spacing (mm)', el.letterSpacing, setter(el, 'letterSpacing'), { type: 'number', step: 0.1, len: true });
   field(r2, 'Line height', el.lineHeight, setter(el, 'lineHeight'), { type: 'number', step: 0.05, min: 0.5 });
   field(p, 'Align', el.align, setter(el, 'align'), { options: { left: 'Left', center: 'Center', right: 'Right' } });
-  field(p, 'Curve text – bend radius in mm (0 = straight, negative = curve down)', el.arc || 0, setter(el, 'arc'), { type: 'number', step: 1 });
+  field(p, 'Curve text – bend radius in mm (0 = straight, negative = curve down)', el.arc || 0, setter(el, 'arc'), { type: 'number', step: 1, len: true });
   field(p, 'Keep centred when text changes (X = centre)', el.anchor === 'center', (v) => {
     checkpoint();
     const g = elementGeometry(el, ctx);
@@ -670,12 +724,12 @@ function renderArrayTool(p) {
     field(r, 'Columns', a.cols, (v) => (a.cols = v), { type: 'number', min: 1, step: 1 });
     field(r, 'Rows', a.rows, (v) => (a.rows = v), { type: 'number', min: 1, step: 1 });
     const r2 = row(p);
-    field(r2, 'Gap X (mm)', a.gapX, (v) => (a.gapX = v), { type: 'number', step: 0.5 });
-    field(r2, 'Gap Y (mm)', a.gapY, (v) => (a.gapY = v), { type: 'number', step: 0.5 });
+    field(r2, 'Gap X (mm)', a.gapX, (v) => (a.gapX = v), { type: 'number', step: 0.5, len: true });
+    field(r2, 'Gap Y (mm)', a.gapY, (v) => (a.gapY = v), { type: 'number', step: 0.5, len: true });
   } else {
     const r = row(p);
     field(r, 'Copies', a.count, (v) => (a.count = v), { type: 'number', min: 2, step: 1 });
-    field(r, 'Radius (mm)', a.radius, (v) => (a.radius = v), { type: 'number', min: 1, step: 0.5 });
+    field(r, 'Radius (mm)', a.radius, (v) => (a.radius = v), { type: 'number', min: 1, step: 0.5, len: true });
     field(p, 'Rotate copies to face the centre', a.rotate, (v) => (a.rotate = v), { type: 'checkbox' });
   }
   buttons(p, [['Create array', makeArray, 'primary']]);
@@ -766,19 +820,19 @@ function renderWorkspaceProps(p) {
     c.preset = 'custom';
     renderStage();
   };
-  field(r, 'Width (mm)', c.w, onSize('w'), { type: 'number', step: 0.1, min: 5 });
-  field(r, 'Height (mm)', c.h, onSize('h'), { type: 'number', step: 0.1, min: 5 });
+  field(r, 'Width (mm)', c.w, onSize('w'), { type: 'number', step: 0.1, min: 5, len: true });
+  field(r, 'Height (mm)', c.h, onSize('h'), { type: 'number', step: 0.1, min: 5, len: true });
   const r2 = row(p);
   field(r2, 'Shape', c.shape || 'rect', (v) => {
     checkpoint();
     c.shape = v;
     renderStage();
   }, { options: { rect: 'Rectangle', ellipse: 'Round / oval' } });
-  field(r2, 'Corner radius', c.radius, (v) => {
+  field(r2, 'Corner radius (mm)', c.radius, (v) => {
     checkpoint('card-r');
     c.radius = v;
     renderStage();
-  }, { type: 'number', step: 0.1, min: 0 });
+  }, { type: 'number', step: 0.1, min: 0, len: true });
   field(p, 'Material preview', c.material, (v) => {
     checkpoint();
     c.material = v;
@@ -825,7 +879,7 @@ function renderPropsKeepRange() {
 
 function renderAll() {
   loadCustomFonts();
-  state.project.laser ||= laserDefaults();
+  ensureMachine(state.project);
   const ids = new Set(els().map((e) => e.id));
   state.sel = new Set([...state.sel].filter((id) => ids.has(id)));
   syncSideToggle();
@@ -1340,6 +1394,7 @@ async function openProject() {
 
 function startProject(project) {
   checkpoint();
+  ensureMachine(project);
   state.project = project;
   state.side = 'front';
   state.sel.clear();
@@ -1636,8 +1691,34 @@ async function refreshAiStatus() {
 
 // ---------- settings (laser layers + Claude AI) ----------
 
-function showSettings(tab = 'laser', message = '') {
-  const L = (state.project.laser ||= laserDefaults());
+// The laser the user owns is remembered for new projects.
+function preferredMachine() {
+  try {
+    const m = localStorage.getItem('lcx.machine');
+    if (MACHINES[m]) return m;
+  } catch {
+    /* storage unavailable */
+  }
+  return 'grbl';
+}
+
+function ensureMachine(project) {
+  project.laser ||= laserDefaults();
+  if (!project.laser.machine.profile) setMachine(project.laser, preferredMachine());
+  return project.laser;
+}
+
+const machineOf = () => MACHINES[state.project.laser?.machine?.profile] || MACHINES.grbl;
+
+// speed shown in the table: machine unit (mm/s or mm/min) converted to inches if wanted
+const speedUnitLabel = () => (inch() ? machineOf().speedUnit.replace('mm', 'in') : machineOf().speedUnit);
+const speedToDisp = (v) => Math.round((inch() ? v / 25.4 : v) * 100) / 100;
+const speedFromDisp = (v) => (inch() ? v * 25.4 : v);
+const intervalToDisp = (mm) => (inch() ? Math.round((mm / 25.4) * 100000) / 100000 : mm);
+const intervalFromDisp = (v) => (inch() ? v * 25.4 : v);
+
+function renderLaserRows() {
+  const L = state.project.laser;
   const rows = [
     ['engrave', 'Engrave (fill)', '#000'],
     ['score', 'Line engrave', '#00f'],
@@ -1645,25 +1726,106 @@ function showSettings(tab = 'laser', message = '') {
     ['image', 'Images (raster)', '#888'],
   ];
   $('#laserRows').innerHTML = rows
-    .map(
-      ([k, label, color]) => `<tr data-k="${k}">
+    .map(([k, label, color]) => {
+      const set = L[k];
+      const dpi = set.interval ? Math.round(25.4 / set.interval) : 0;
+      return `<tr data-k="${k}">
       <td><span class="sw" style="background:${color}"></span> ${label}</td>
-      <td><input type="checkbox" data-f="output" ${L[k].output ? 'checked' : ''}></td>
-      <td><input type="number" data-f="speed" min="1" step="50" value="${L[k].speed}"></td>
-      <td><input type="number" data-f="power" min="0" max="100" step="1" value="${L[k].power}"></td>
-      <td><input type="number" data-f="passes" min="1" step="1" value="${L[k].passes}"></td>
-      <td>${L[k].interval !== undefined ? `<input type="number" data-f="interval" min="0.02" step="0.01" value="${L[k].interval}">` : '–'}</td>
-    </tr>`
-    )
+      <td><input type="checkbox" data-f="output" ${set.output ? 'checked' : ''}></td>
+      <td><input type="number" data-f="speed" min="0" step="any" value="${speedToDisp(set.speed)}"></td>
+      <td><input type="number" data-f="power" min="0" max="100" step="1" value="${set.power}"></td>
+      <td><input type="number" data-f="passes" min="1" step="1" value="${set.passes}"></td>
+      <td>${set.interval !== undefined ? `<input type="number" data-f="interval" min="0" step="any" value="${intervalToDisp(set.interval)}" title="≈ ${dpi} DPI"><small class="dpi">${dpi} DPI</small>` : '–'}</td>
+    </tr>`;
+    })
     .join('');
+  for (const el of document.querySelectorAll('#dlgSettings .u-speed')) el.textContent = speedUnitLabel();
+  for (const el of document.querySelectorAll('#dlgSettings .u-len')) el.textContent = unitLabel();
+}
+
+// Reads the table back into the project (so switching unit/preset keeps edits).
+function readLaserRows() {
+  const L = state.project.laser;
+  for (const tr of document.querySelectorAll('#laserRows tr')) {
+    const set = L[tr.dataset.k];
+    for (const inp of tr.querySelectorAll('input')) {
+      const k = inp.dataset.f;
+      if (inp.type === 'checkbox') set[k] = inp.checked;
+      // untouched fields keep their exact stored value (no unit round-trip drift)
+      else if (inp.value === inp.defaultValue) continue;
+      else {
+        let v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) continue;
+        if (k === 'speed') v = speedFromDisp(v);
+        if (k === 'interval') v = intervalFromDisp(v);
+        set[k] = Math.max(k === 'passes' ? 1 : 0, Math.round(v * 10000) / 10000);
+      }
+    }
+  }
+}
+
+function renderMachineControls() {
+  const L = state.project.laser;
+  const mKey = L.machine.profile || 'grbl';
+  const m = machineOf();
+  $('#machineProfile').innerHTML = Object.entries(MACHINES)
+    .map(([k, v]) => `<option value="${k}" ${k === mKey ? 'selected' : ''}>${v.label}</option>`)
+    .join('');
+  const presets = PRESETS[mKey] || {};
+  $('#materialPreset').innerHTML =
+    `<option value="">— choose a material to fill in the settings —</option>` +
+    Object.entries(presets)
+      .map(([k, v]) => `<option value="${k}" ${k === L.machine.preset ? 'selected' : ''}>${v.label}</option>`)
+      .join('');
+  const p = presets[L.machine.preset];
+  $('#presetNote').textContent = p ? p.note : '';
+  for (const el of document.querySelectorAll('#dlgSettings .grbl-only')) el.hidden = m.controller !== 'grbl';
+  $('#laserFoot').textContent =
+    m.controller === 'ruida'
+      ? `Ruida controller: export SVG and enter these values in LightBurn (Cuts / Layers: black = fill, blue = line, red = cut). Set LightBurn to ${inch() ? 'inches (Edit → Settings → Units)' : 'mm'} to match. Presets are starting points – run LightBurn's Material Test on scrap first.`
+      : 'Used for G-code export and the 🔌 Laser USB panel. Presets are starting points – test on scrap first.';
   const f = $('#settingsForm');
   f.maxS.value = L.machine.maxS;
-  f.travel.value = L.machine.travel;
-  f.laserMode.value = L.machine.laserMode;
+  f.travel.value = f.travel.defaultValue = speedToDisp(L.machine.travel);
+  f.laserMode.value = L.machine.laserMode || 'M4';
   f.airAssist.checked = !!L.machine.airAssist;
+}
+
+function showSettings(tab = 'laser', message = '') {
+  ensureMachine(state.project);
+  renderMachineControls();
+  renderLaserRows();
   updateClaudePane(message);
   setSettingsTab(tab);
   if (!$('#dlgSettings').open) $('#dlgSettings').showModal();
+}
+
+function onMachineChange(key) {
+  readLaserRows();
+  setMachine(state.project.laser, key);
+  state.project.laser.machine.preset = '';
+  try {
+    localStorage.setItem('lcx.machine', key);
+  } catch {
+    /* storage unavailable */
+  }
+  renderMachineControls();
+  renderLaserRows();
+}
+
+function onPresetChange(key) {
+  if (!key) return;
+  checkpoint();
+  const p = applyMaterialPreset(state.project.laser, state.project.laser.machine.profile, key);
+  if (p?.metalCard && card().includeOutline) {
+    // CO₂ and diode lasers can't cut metal: engrave blanks only
+    card().includeOutline = false;
+    renderStage();
+    renderProps();
+    toast('Metal card preset: the card outline is no longer cut (use pre-cut blanks).', 4500);
+  }
+  renderMachineControls();
+  renderLaserRows();
 }
 
 function setSettingsTab(tab) {
@@ -1709,19 +1871,14 @@ async function forgetKey() {
 
 function saveLaserSettings() {
   checkpoint();
+  readLaserRows();
   const L = state.project.laser;
-  for (const tr of document.querySelectorAll('#laserRows tr')) {
-    const set = L[tr.dataset.k];
-    for (const inp of tr.querySelectorAll('input')) {
-      const k = inp.dataset.f;
-      set[k] = inp.type === 'checkbox' ? inp.checked : Math.max(k === 'passes' ? 1 : 0, parseFloat(inp.value) || set[k]);
-    }
-  }
   const f = $('#settingsForm');
   L.machine.maxS = Math.max(1, parseFloat(f.maxS.value) || 1000);
-  L.machine.travel = Math.max(100, parseFloat(f.travel.value) || 6000);
+  if (f.travel.value !== f.travel.defaultValue) L.machine.travel = Math.max(1, speedFromDisp(parseFloat(f.travel.value) || 0) || L.machine.travel);
   L.machine.laserMode = f.laserMode.value;
   L.machine.airAssist = f.airAssist.checked;
+  if (!$('#machinePanel').hidden) renderRuidaPanel();
   toast('Settings saved with the project');
 }
 
@@ -1753,9 +1910,51 @@ function mlog(line) {
   box.scrollTop = box.scrollHeight;
 }
 
+// Settings to type into LightBurn for each layer, in the display units.
+function layerSummary() {
+  const L = ensureMachine(state.project);
+  const u = speedUnitLabel();
+  const line = (name, set, extra = '') =>
+    set.output ? `${name}: ${speedToDisp(set.speed)} ${u}, ${set.power}% max, ${set.passes} pass${set.passes > 1 ? 'es' : ''}${extra}` : `${name}: off`;
+  const iv = (set) => (set.interval ? `, interval ${intervalToDisp(set.interval)} ${unitLabel()} (${Math.round(25.4 / set.interval)} DPI)` : '');
+  return [
+    line('Black – Fill', L.engrave, iv(L.engrave)),
+    line('Blue – Line', L.score),
+    line('Red – Cut', L.cut),
+    line('Images – Dither', L.image, iv(L.image)),
+  ];
+}
+
+function renderRuidaPanel() {
+  const ruida = machineOf().controller === 'ruida';
+  $('#mRuida').hidden = !ruida;
+  $('#mConnectRow').hidden = ruida;
+  $('.machine .mbody').hidden = ruida;
+  $('#mGrblNote').hidden = ruida;
+  if (!ruida) return;
+  const preset = PRESETS[state.project.laser.machine.profile]?.[state.project.laser.machine.preset];
+  $('#mRuida').innerHTML = `
+    <p><b>${machineOf().label}</b> uses a Ruida controller, so jobs go through <b>LightBurn</b> (or RDWorks) instead of USB from here.</p>
+    <ol class="steps">
+      <li>Click <b>Export… → SVG</b> (tick Bulk ×6 for a batch).</li>
+      <li>In LightBurn: <b>File → Import</b> the SVG. Layers arrive by colour.</li>
+      <li>Enter these settings in <b>Cuts / Layers</b>${preset ? ` (${preset.label})` : ''}:</li>
+    </ol>
+    <ul class="settings-list">${layerSummary().map((l) => `<li>${l}</li>`).join('')}</ul>
+    <p class="note">Units: set LightBurn to ${inch() ? '<b>inches</b>' : '<b>mm</b>'} to match. Focus, frame, then Start in LightBurn. ${preset ? '' : 'Pick a material preset in ⚙ Settings to fill these in.'}</p>
+    <div class="btnrow"><button type="button" id="mOpenSettings">⚙ Change settings</button><button type="button" id="mExport" class="primary">Export SVG…</button></div>`;
+  $('#mOpenSettings').onclick = () => showSettings('laser');
+  $('#mExport').onclick = () => {
+    showExportDialog();
+    $('#exportForm').format.value = 'svg';
+    $('#exportForm').format.onchange();
+  };
+}
+
 function toggleMachinePanel() {
   const panel = $('#machinePanel');
   panel.hidden = !panel.hidden;
+  if (!panel.hidden) renderRuidaPanel();
   if (!panel.hidden && !serialSupported()) mlog('This browser cannot access USB. Use the LaserCutX desktop app, Chrome or Edge.');
   $('.machine .mbody').classList.toggle('off', !machine.connected);
 }
@@ -1808,7 +2007,7 @@ function bulkSheet(form) {
   if (!form.bulk.checked) return null;
   const count = Math.max(2, Math.min(100, parseInt(form.copies.value, 10) || 6));
   const cols = Math.max(1, Math.min(count, parseInt(form.cols.value, 10) || 3));
-  const gap = Math.max(0, parseFloat(form.gap.value) || 0);
+  const gap = Math.max(0, fromDisp(parseFloat(form.gap.value) || 0));
   return { count, cols, gap };
 }
 
@@ -1816,24 +2015,35 @@ function showExportDialog(opts = {}) {
   const dlg = $('#dlgExport');
   const form = $('#exportForm');
   form.bulk.checked = !!opts.bulk;
+  // the gap box follows the display unit
+  if (form.gap.dataset.unit !== unitLabel()) {
+    const mm = form.gap.dataset.unit === 'in' ? parseFloat(form.gap.value) * 25.4 : parseFloat(form.gap.value) || 3;
+    form.gap.value = round(toDisp(mm), inch() ? 3 : 1);
+    form.gap.step = inch() ? 0.02 : 0.5;
+    form.gap.dataset.unit = unitLabel();
+    $('#gapLabel').firstChild.textContent = `Gap (${unitLabel()}) `;
+  }
   const update = () => {
     const sheet = bulkSheet(form);
     form.querySelector('.bulk').classList.toggle('off', !sheet);
     if (sheet) {
       const l = sheetLayout(card(), sheet);
-      $('#bulkNote').textContent = `${sheet.count} copies in ${l.cols} × ${l.rows} – sheet ${round(l.w, 1)} × ${round(l.h, 1)} mm. Make sure it fits your laser bed.`;
+      $('#bulkNote').textContent = `${sheet.count} copies in ${l.cols} × ${l.rows} – sheet ${fmtLen(l.w)} × ${fmtLen(l.h)} ${unitLabel()}. Make sure it fits your laser bed.`;
     } else {
       $('#bulkNote').textContent = '';
     }
     const fmt = form.format.value;
     form.querySelector('.png-only').style.display = fmt === 'png' ? '' : 'none';
     const notes = {
-      svg: 'Millimetre units – imports at true size. Layers are coloured so LightBurn assigns them automatically.',
+      svg: 'Imports at true size in LightBurn (inch or mm mode). Layers are coloured so LightBurn assigns them automatically.',
       dxf: 'Vector only (images are left out – convert them to vector first). Layers: ENGRAVE, SCORE, CUT.',
       png: 'Black = engrave. DPI is stored in the file so it imports at the correct size.',
       gcode: 'For GRBL lasers. Uses speed/power/passes from Laser settings; images are raster-engraved; holes are cut before outlines.',
     };
     $('#exportNote').textContent = notes[fmt];
+    if (machineOf().controller === 'ruida' && fmt === 'svg') {
+      $('#exportNote').innerHTML = `${notes.svg}<br><b>LightBurn settings:</b><br>${layerSummary().join('<br>')}`;
+    }
   };
   form.format.onchange = update;
   for (const n of ['bulk', 'copies', 'cols', 'gap']) form[n].oninput = update;
@@ -2287,6 +2497,19 @@ function wire() {
     $('#btnGrid').classList.toggle('active', state.grid);
     renderStage();
   };
+  $('#machineProfile').onchange = (e) => onMachineChange(e.target.value);
+  $('#materialPreset').onchange = (e) => onPresetChange(e.target.value);
+  $('#unitSel').value = units.current;
+  $('#unitSel').onchange = (e) => {
+    if ($('#dlgSettings').open) readLaserRows();
+    setUnits(e.target.value);
+    fillSnapOptions();
+    if ($('#dlgSettings').open) {
+      renderMachineControls();
+      renderLaserRows();
+    }
+  };
+  fillSnapOptions();
   $('#snapSel').onchange = (e) => {
     state.snap = parseFloat(e.target.value) || 0;
     renderStage();

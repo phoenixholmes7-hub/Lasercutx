@@ -4,6 +4,7 @@
 import { flatten, pathBounds, applyPoint } from './geometry.js';
 import { placedItems } from './exporters.js';
 import { laserDefaults } from './model.js';
+import { toMmPerMin } from './machines.js';
 
 const f3 = (n) => (Math.round(n * 1000) / 1000).toString();
 
@@ -11,6 +12,8 @@ const f3 = (n) => (Math.round(n * 1000) / 1000).toString();
 export function toGcode(project, side, ctx, opts = {}) {
   const L = { ...laserDefaults(), ...(project.laser || {}) };
   const M = L.machine;
+  const unit = M.speedUnit || 'mm/min';
+  const feed = (v) => toMmPerMin(v, unit); // G-code F is always mm/min
   const { layout, items } = placedItems(project, side, ctx, opts);
   const H = layout.h;
   const lines = [];
@@ -24,7 +27,7 @@ export function toGcode(project, side, ctx, opts = {}) {
     const d = Math.hypot(x - pos[0], y - pos[1]);
     if (d < 1e-4) return;
     travel += d;
-    time += (d / M.travel) * 60;
+    time += (d / feed(M.travel)) * 60;
     lines.push(`G0 X${f3(x)} Y${f3(H - y)}`);
     pos = [x, y];
   };
@@ -32,8 +35,8 @@ export function toGcode(project, side, ctx, opts = {}) {
     const d = Math.hypot(x - pos[0], y - pos[1]);
     if (d < 1e-4) return;
     cut += d;
-    time += (d / set.speed) * 60;
-    lines.push(`G1 X${f3(x)} Y${f3(H - y)} S${S(set.power)} F${Math.round(set.speed)}`);
+    time += (d / feed(set.speed)) * 60;
+    lines.push(`G1 X${f3(x)} Y${f3(H - y)} S${S(set.power)} F${Math.round(feed(set.speed))}`);
     pos = [x, y];
   };
   const comment = (t) => lines.push(`; ${t}`);

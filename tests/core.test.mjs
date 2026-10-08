@@ -182,3 +182,36 @@ test('polygons, stars, flips and curved text', async () => {
   assert.ok(curved.h > straight.h * 1.5, `${curved.h} vs ${straight.h}`);
   assert.ok(!curved.cmds.some((c) => Number.isNaN(c.x)));
 });
+
+test('machine profiles, presets and unit-correct G-code feeds', async () => {
+  const { MACHINES, PRESETS, setMachine, applyMaterialPreset, toMmPerMin } = await import('../src/js/machines.js');
+  const { laserDefaults } = await import('../src/js/model.js');
+  const { toGcode } = await import('../src/js/gcode.js');
+  assert.equal(MACHINES['thunder-nova-rf60'].speedUnit, 'mm/s');
+  // switching GRBL (mm/min) -> Thunder (mm/s) keeps the same physical speed
+  const L = laserDefaults();
+  setMachine(L, 'grbl');
+  L.engrave.speed = 6000; // mm/min
+  setMachine(L, 'thunder-nova-rf60');
+  assert.equal(L.engrave.speed, 100); // mm/s
+  const p = applyMaterialPreset(L, 'thunder-nova-rf60', 'anodized-al');
+  assert.equal(p.metalCard, true);
+  assert.equal(L.engrave.speed, 400);
+  assert.equal(L.cut.output, false);
+  assert.equal(toMmPerMin(400, 'mm/s'), 24000);
+  // every preset has sane values
+  for (const [m, list] of Object.entries(PRESETS)) {
+    for (const [k, pr] of Object.entries(list)) {
+      for (const layer of ['engrave', 'score', 'image', 'cut']) {
+        assert.ok(pr[layer] && pr[layer].power >= 0 && pr[layer].power <= 100, `${m}/${k}/${layer}`);
+      }
+    }
+  }
+  // G-code F words are mm/min even when settings are stored in mm/s
+  const proj = newProject('keychain');
+  proj.laser = L;
+  proj.laser.cut = { output: true, speed: 20, power: 75, passes: 1 };
+  const { gcode } = toGcode(proj, 'front', ctx);
+  assert.ok(gcode.includes('F1200'), 'cut 20 mm/s -> F1200');
+  assert.ok(gcode.includes('F24000'), 'fill 400 mm/s -> F24000');
+});

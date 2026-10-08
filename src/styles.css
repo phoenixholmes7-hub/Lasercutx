@@ -205,3 +205,13 @@ dialog .bulk.off .bulk-opts { opacity: 0.4; pointer-events: none; }
   .topbar .brand { font-size: 15px; margin-right: 0; }
   #zoomLabel { min-width: 36px; }
 }
+
+.laser-table small.dpi { display: block; color: var(--muted); font-size: 10px; }
+#unitSel { width: auto; }
+.mruida p { margin: 4px 0 8px; line-height: 1.45; }
+.mruida .steps { margin: 0 0 6px; }
+.settings-list { margin: 0 0 8px; padding-left: 18px; font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+#machinePanel { width: 340px; max-height: calc(100% - 60px); overflow-y: auto; }
+/* "hidden" always wins over display rules like .row / .btnrow flex */
+[hidden] { display: none !important; }
+.laser-table input[data-f='interval'] { width: 92px; }
